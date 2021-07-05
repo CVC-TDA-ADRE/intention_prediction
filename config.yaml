@@ -1,0 +1,28 @@
+DATA:
+  train_path: /datatmp/Datasets/intention_prediction/JAAD/processed_annotations/train.csv
+  val_path: /datatmp/Datasets/intention_prediction/JAAD/processed_annotations/val.csv
+  batch_size: 6
+  num_workers: 6
+  pin_memory: False
+  desired_fps: 12
+  input_seq_size: 4
+  resize: 256
+  overlap_percent: 0.8
+  data_fps: 30
+  image_mean: [0.45, 0.45, 0.45]
+  image_std: [0.225, 0.225, 0.225]
+
+TRAINING:
+  gpus: -1
+  epochs: 10
+  lr: 0.001
+  betas: [0.9, 0.999]
+  frac_train: 0.001
+  frac_val: 0.1
+  video_every: 20
+  model_to_use: slow_r50
+
+MODEL:
+  model_num_class: 1
+  model_pretraining: null
+
