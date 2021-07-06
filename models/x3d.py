@@ -1,8 +1,9 @@
 from pytorchvideo.layers.swish import Swish
 from pytorchvideo.layers.utils import round_width, round_repeats
-from pytorchvideo.models.net import Net
+
+# from pytorchvideo.models.net import Net
 from pytorchvideo.models.net import DetectionBBoxNetwork
-from pytorchvideo.models.head import create_res_roi_pooling_head
+from models.models_utils import create_res_roi_pooling_head, Net
 import math
 from typing import Callable, Tuple
 
@@ -11,7 +12,7 @@ import torch
 import torch.nn as nn
 from torch.hub import load_state_dict_from_url
 
-# from pytorchvideo.models.weight_init import init_net_weights
+from utils.utils import initialize_weights
 from pytorchvideo.models.x3d import (
     create_x3d_bottleneck_block,
     create_x3d_stem,
@@ -241,6 +242,8 @@ def create_x3d_with_roi_head(
     )
     if state_dict:
         load_state_dict_flexible(model, state_dict)
+    else:
+        initialize_weights(model)
 
     exp_stage = 2.0
     stage_dim1 = stem_dim_in
@@ -283,7 +286,8 @@ def create_x3d_with_roi_head(
         spatial_scale=head_spatial_scale,
         sampling_ratio=head_sampling_ratio,
     )
-    # head = init_net_weights(head)
+
+    initialize_weights(head)
 
     return DetectionBBoxNetwork(model, head)
 
@@ -305,6 +309,8 @@ class X3D_RoI(nn.Module):
             input_clip_length=clip_length,
             model_num_class=model_num_class,
             state_dict=state_dict,
+            head_activation=None,
+            # norm=None,
             **kwargs,
         )
 

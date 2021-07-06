@@ -1,5 +1,5 @@
 import pytorch_lightning as pl
-from intention_dataset import IntentionDataset
+from data.intention_dataset import IntentionDataset
 from torch.utils.data import DataLoader
 import torch
 

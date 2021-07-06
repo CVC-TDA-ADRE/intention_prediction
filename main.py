@@ -4,7 +4,7 @@ import yaml
 import argparse
 import pytorch_lightning as pl
 from pytorch_lightning.loggers import WandbLogger
-from intention_dataloader import IntentionDataloader
+from data.intention_dataloader import IntentionDataloader
 from models.intention_predictor import IntentionPredictor
 
 
@@ -39,10 +39,18 @@ def train(args):
         logger=logger,
         fast_dev_run=args.debug,
         max_epochs=training_config["epochs"],
+        log_every_n_steps=training_config["log_every"],
         limit_train_batches=training_config["frac_train"],
         limit_val_batches=training_config["frac_val"],
         accumulate_grad_batches=args.accumulate_batch,
+        checkpoint_callback=args.save_checkpoints,
+        # auto_lr_find=args.auto_lr_find,
     )
+    if args.wandb:
+        logger.watch(predictor.model)
+
+    if args.auto_lr_find:
+        trainer.tune(predictor, data)
     trainer.fit(predictor, data)
 
 
@@ -59,5 +67,6 @@ if __name__ == "__main__":
         "--accumulate_batch", type=int, default=1, help="Number of batch to accumulate"
     )
     parser.add_argument("--save_checkpoints", action="store_true", help="Store checkpoints")
+    # parser.add_argument("--auto_lr_find", action="store_true", help="Store checkpoints")
     args = parser.parse_args()
     train(args)

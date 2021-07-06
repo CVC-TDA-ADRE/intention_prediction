@@ -6,6 +6,52 @@ from io import BytesIO
 import cv2
 import scipy.io.wavfile as wav
 import tempfile
+import torch.nn as nn
+
+
+def initialization(weights, type="xavier", init=None):
+    if type == "normal":
+        if init is None:
+            torch.nn.init.normal_(weights)
+        else:
+            torch.nn.init.normal_(weights, mean=init[0], std=init[1])
+    elif type == "xavier":
+        if init is None:
+            torch.nn.init.xavier_normal_(weights)
+        else:
+            torch.nn.init.xavier_normal_(weights, gain=init)
+    elif type == "kaiming":
+        torch.nn.init.kaiming_normal_(weights)
+    elif type == "orthogonal":
+        if init is None:
+            torch.nn.init.orthogonal_(weights)
+        else:
+            torch.nn.init.orthogonal_(weights, gain=init)
+    else:
+        raise NotImplementedError("Unknown initialization method")
+
+
+def initialize_weights(
+    net, type="xavier", init=None, init_bias=False, batchnorm_shift=None
+):
+    def init_func(m):
+        classname = m.__class__.__name__
+        if hasattr(m, "weight") and (
+            classname.find("Conv") != -1 or classname.find("Linear") != -1
+        ):
+            initialization(m.weight, type=type, init=init)
+            if init_bias and hasattr(m, "bias") and m.bias is not None:
+                torch.nn.init.constant_(m.bias.data, 0.0)
+        elif classname.find("BatchNorm") != -1 and batchnorm_shift is not None:
+            torch.nn.init.normal_(m.weight, 1.0, batchnorm_shift)
+            torch.nn.init.constant_(m.bias, 0.0)
+        elif isinstance(m, nn.GRU) or isinstance(m, nn.LSTM):
+            for layer_params in m._all_weights:
+                for param in layer_params:
+                    if "weight" in param:
+                        initialization(m._parameters[param])
+
+    net.apply(init_func)
 
 
 def swp_extension(file, ext):

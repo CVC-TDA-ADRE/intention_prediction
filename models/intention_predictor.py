@@ -1,4 +1,5 @@
 import wandb
+import torch
 import torch.nn as nn
 import numpy as np
 import torch.optim as optim
@@ -21,8 +22,9 @@ class IntentionPredictor(pl.LightningModule):
         self.training_kwargs = training_kwargs
         self.train_accuracy = torchmetrics.Accuracy()
         self.val_accuracy = torchmetrics.Accuracy()
-        self.bce_loss = nn.BCELoss()
+        self.bce_loss = nn.BCEWithLogitsLoss()
         self.fps = data_kwargs["data_fps"]
+        self.lr = self.training_kwargs["lr"]
 
         if training_kwargs["model_to_use"] == "x3d":
             self.model = X3D_RoI(
@@ -31,7 +33,7 @@ class IntentionPredictor(pl.LightningModule):
                 **model_kwargs,
             )
         elif training_kwargs["model_to_use"] == "slow_r50":
-            self.model = SlowR50(model_num_class=1)
+            self.model = SlowR50(**model_kwargs)
         print(self.model)
 
         # if self.logger is not None:
@@ -47,24 +49,25 @@ class IntentionPredictor(pl.LightningModule):
     def configure_optimizers(self):
         gen_optimiser = optim.Adam(
             self.parameters(),
-            lr=self.training_kwargs["lr"],
+            lr=self.lr,
             betas=self.training_kwargs["betas"],
         )
-        return [gen_optimiser]
+        return gen_optimiser
 
     def training_step(self, batch, batch_idx) -> Tensor:
         clip, boxes, labels = batch["clip"], batch["boxes"], batch["label"]
-        preds = self.model(clip, boxes)
-        print(preds[0], labels[0])
-        self.train_accuracy(preds, labels)
-        self.log("train/acc", self.train_accuracy, on_step=True)
+        preds = self(clip, boxes)
+        # print(preds[0], labels[0])
+        acc = self.train_accuracy(torch.sigmoid(preds), labels)
         loss = self.bce_loss(preds, labels.float())
-        self.log("train/loss", loss, on_step=True)
+        # Log loss and metric
+        self.log("train_loss", loss)
+        self.log("train_accuracy", acc)
         if self.logger is not None and (
             batch_idx % self.training_kwargs["video_every"] == 0
         ):
             sample_clip = batch["original_clip"][0].cpu() / 255.0
-            sample_preds = preds[: len(boxes[0])].detach().cpu()
+            sample_preds = torch.sigmoid(preds[: len(boxes[0])]).detach().cpu()
             sample_boxes = batch["original_boxes"][0]
 
             preview_video = self.visualization.draw_clip_range(
@@ -75,10 +78,10 @@ class IntentionPredictor(pl.LightningModule):
                     "train/video": wandb.Video(
                         video_to_stream(np.array(preview_video), fps=self.fps),
                         format="mp4",
-                        caption=f"True label: {list(labels[: len(boxes[0])].detach().cpu().numpy())}",
+                        caption=f"True label: {labels[: len(boxes[0])].detach().cpu().numpy()}",
                     ),
+                    "global_step": self.global_step
                     # "video": wandb.Video(video_to_stream(clip, fps=self.fps), format="mp4")
-                    "global_step": self.global_step,
                 }
             )
         return loss
@@ -87,7 +90,7 @@ class IntentionPredictor(pl.LightningModule):
         clip, boxes, labels = batch["clip"], batch["boxes"], batch["label"]
         preds = self.model(clip, boxes)
         loss = self.bce_loss(preds, labels.float())
-        self.val_accuracy(preds, labels)
+        self.val_accuracy(torch.sigmoid(preds), labels)
         self.log("val/acc", self.val_accuracy)
         self.log("val/loss", loss)
 
