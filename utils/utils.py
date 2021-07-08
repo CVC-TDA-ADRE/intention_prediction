@@ -9,6 +9,19 @@ import tempfile
 import torch.nn as nn
 
 
+def assert_arr_continuous(arr):
+    return arr.data.contiguous
+
+
+def find_closest_match(labels, len_box):
+    for i in range(1, len(labels)):
+        if len(labels[-i]) == len_box:
+            # print(i)
+            return labels[-i]
+
+    raise ValueError
+
+
 def initialization(weights, type="xavier", init=None):
     if type == "normal":
         if init is None:

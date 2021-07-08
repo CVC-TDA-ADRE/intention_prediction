@@ -17,6 +17,9 @@ def train(args):
     training_config = config["TRAINING"]
     model_config = config["MODEL"]
 
+    if isinstance(data_config["resize"], int):
+        data_config["resize"] = (data_config["resize"], data_config["resize"])
+
     data = IntentionDataloader(**data_config)
     data.setup("fit")
 

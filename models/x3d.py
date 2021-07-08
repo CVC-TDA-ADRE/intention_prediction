@@ -2,8 +2,8 @@ from pytorchvideo.layers.swish import Swish
 from pytorchvideo.layers.utils import round_width, round_repeats
 
 # from pytorchvideo.models.net import Net
-from pytorchvideo.models.net import DetectionBBoxNetwork
-from models.models_utils import create_res_roi_pooling_head, Net
+# from pytorchvideo.models.net import DetectionBBoxNetwork
+from models.models_utils import create_res_roi_pooling_head, Net, DetectionBBoxNetwork
 import math
 from typing import Callable, Tuple
 
@@ -18,6 +18,7 @@ from pytorchvideo.models.x3d import (
     create_x3d_stem,
     create_x3d_res_stage,
     create_x3d_head,
+    ProjectedPool,
 )
 
 from utils.utils import load_state_dict_flexible
@@ -132,13 +133,13 @@ def create_x3d(
         input_clip_length >= total_temporal_stride
     ), "Clip length doesn't match temporal stride!"
     assert (
-        input_crop_size >= total_spatial_stride
+        input_crop_size[0] >= total_spatial_stride
     ), "Crop size doesn't match spatial stride!"
 
     head_pool_kernel_size = (
         input_clip_length // total_temporal_stride,
-        int(math.ceil(input_crop_size / total_spatial_stride)),
-        int(math.ceil(input_crop_size / total_spatial_stride)),
+        int(math.ceil(input_crop_size[0] / total_spatial_stride)),
+        int(math.ceil(input_crop_size[1] / total_spatial_stride)),
     )
 
     if is_head:
@@ -198,6 +199,7 @@ def create_x3d_with_roi_head(
     # Head configs.
     head: Callable = create_res_roi_pooling_head,
     head_pool: Callable = nn.AvgPool3d,
+    head_pool_act: Callable = nn.ReLU,
     head_pool_kernel_sizes: Tuple[Tuple[int]] = ((8, 1, 1), (32, 1, 1)),
     head_output_size: Tuple[int] = (1, 1, 1),
     head_activation: Callable = nn.Sigmoid,
@@ -205,8 +207,12 @@ def create_x3d_with_roi_head(
     head_spatial_resolution: Tuple[int] = (7, 7),
     head_spatial_scale: float = 1.0 / 16.0,
     head_sampling_ratio: int = 0,
+    head_dim_out: int = 2048,
+    head_bn_lin5_on: bool = False,
     # Pretrained model
     state_dict=None,
+    # projected pool
+    is_projected=False,
 ) -> nn.Module:
 
     model = create_x3d(
@@ -262,28 +268,70 @@ def create_x3d_with_roi_head(
         input_clip_length >= total_temporal_stride
     ), "Clip length doesn't match temporal stride!"
     assert (
-        input_crop_size >= total_spatial_stride
+        input_crop_size[0] >= total_spatial_stride
     ), "Crop size doesn't match spatial stride!"
 
-    head_pool_kernel_size = (
-        input_clip_length // total_temporal_stride,
-        int(math.ceil(input_crop_size / total_spatial_stride)),
-        int(math.ceil(input_crop_size / total_spatial_stride)),
-    )
+    # head_pool_kernel_size = (
+    #     input_clip_length // total_temporal_stride,
+    #     int(math.ceil(input_crop_size / total_spatial_stride)),
+    #     int(math.ceil(input_crop_size / total_spatial_stride)),
+    # )
+    head_pool_kernel_size = (input_clip_length // total_temporal_stride, 1, 1)
 
     # pool_module = nn.AvgPool3d(head_pool_kernel_size, stride=1)
+    dim_inner = int(bottleneck_factor * dim_out)
+    pre_conv_module = nn.Conv3d(
+        in_channels=dim_out, out_channels=dim_inner, kernel_size=(1, 1, 1), bias=False
+    )
+
+    pre_norm_module = norm(num_features=dim_inner, eps=norm_eps, momentum=norm_momentum)
+    pre_act_module = None if head_pool_act is None else head_pool_act()
+
+    if head_pool_kernel_size is None:
+        pool_module = nn.AdaptiveAvgPool3d((1, 1, 1))
+    else:
+        pool_module = nn.AvgPool3d(head_pool_kernel_size, stride=1)
+
+    post_conv_module = nn.Conv3d(
+        in_channels=dim_inner, out_channels=head_dim_out, kernel_size=(1, 1, 1), bias=False
+    )
+
+    if head_bn_lin5_on:
+        post_norm_module = norm(
+            num_features=head_dim_out, eps=norm_eps, momentum=norm_momentum
+        )
+    else:
+        post_norm_module = None
+    post_act_module = None if head_pool_act is None else head_pool_act()
+
+    projected_pool_module = ProjectedPool(
+        pre_conv=pre_conv_module,
+        pre_norm=pre_norm_module,
+        pre_act=pre_act_module,
+        pool=pool_module,
+        post_conv=post_conv_module,
+        post_norm=post_norm_module,
+        post_act=post_act_module,
+    )
+
+    if is_projected:
+        pool = projected_pool_module
+        in_feat = head_dim_out
+    else:
+        pool = nn.AvgPool3d
+        in_feat = dim_out
 
     head = create_res_roi_pooling_head(
-        in_features=dim_out,
+        in_features=in_feat,
         out_features=model_num_class,
-        pool=nn.AvgPool3d,
+        pool=pool,
         pool_kernel_size=head_pool_kernel_size,
         output_size=head_output_size,
         dropout_rate=dropout_rate,
         activation=head_activation,
         output_with_global_average=head_output_with_global_average,
         resolution=head_spatial_resolution,
-        spatial_scale=head_spatial_scale,
+        spatial_scale=1 / total_spatial_stride,
         sampling_ratio=head_sampling_ratio,
     )
 
@@ -292,27 +340,48 @@ def create_x3d_with_roi_head(
     return DetectionBBoxNetwork(model, head)
 
 
-class X3D_RoI(nn.Module):
+class X3D(nn.Module):
     def __init__(
         self,
+        model_type="detection",
         crop_size=160,
         clip_length=10,
         model_num_class=400,
         model_pretraining=None,
         **kwargs,
     ):
-        super(X3D_RoI, self).__init__()
+        super(X3D, self).__init__()
 
         state_dict = self.get_state_dict(model_pretraining)
-        self.model = create_x3d_with_roi_head(
-            input_crop_size=crop_size,
-            input_clip_length=clip_length,
-            model_num_class=model_num_class,
-            state_dict=state_dict,
-            head_activation=None,
-            # norm=None,
-            **kwargs,
-        )
+        self.model_type = model_type
+
+        if model_type == "detection":
+            self.model = create_x3d_with_roi_head(
+                input_crop_size=crop_size,
+                input_clip_length=clip_length,
+                model_num_class=model_num_class,
+                state_dict=state_dict,
+                head_activation=None,
+                is_projected=False,
+                # head_spatial_scale=1.0 / 32.0,
+                # norm=None,
+                **kwargs,
+            )
+        elif model_type == "classification":
+            self.model = create_x3d(
+                input_crop_size=crop_size,
+                input_clip_length=clip_length,
+                model_num_class=model_num_class,
+                **kwargs,
+            )
+            if state_dict:
+                load_state_dict_flexible(self.model, state_dict)
+            else:
+                initialize_weights(self.model)
+        else:
+            raise ValueError(
+                f"Please enter a valid model type (classification, detection) not {model_type}"
+            )
 
     def get_state_dict(self, model_name):
         if model_name:
@@ -330,13 +399,15 @@ class X3D_RoI(nn.Module):
         else:
             return None
 
-    def forward(self, x, bboxes):
-
-        return self.model(x, bboxes)
+    def forward(self, x, bboxes=None):
+        if self.model_type == "detection":
+            return self.model(x, bboxes)
+        else:
+            return self.model(x)
 
 
 if __name__ == "__main__":
-    model = X3D_RoI(model_num_class=1, model_pretraining="x3d_s")
+    model = X3D(model_num_class=1, model_pretraining="x3d_s")
     input_vid = torch.rand(4, 3, 10, 160, 455)
     bboxes = [torch.rand(2, 4), torch.rand(1, 4), torch.rand(2, 4), torch.rand(2, 4)]
     out = model(input_vid, bboxes)

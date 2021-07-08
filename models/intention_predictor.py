@@ -11,7 +11,7 @@ from typing import Dict
 
 from utils.utils import video_to_stream
 from utils.visualization import VideoVisualizer
-from models.x3d import X3D_RoI
+from models.x3d import X3D
 from models.slow_r50 import SlowR50
 
 
@@ -20,20 +20,35 @@ class IntentionPredictor(pl.LightningModule):
         super(IntentionPredictor, self).__init__()
 
         self.training_kwargs = training_kwargs
-        self.train_accuracy = torchmetrics.Accuracy()
-        self.val_accuracy = torchmetrics.Accuracy()
         self.bce_loss = nn.BCEWithLogitsLoss()
         self.fps = data_kwargs["data_fps"]
         self.lr = self.training_kwargs["lr"]
+        self.model_type = data_kwargs["dataset_type"]
+
+        # Metrics
+        self.train_accuracy = torchmetrics.Accuracy()
+        self.val_accuracy = torchmetrics.Accuracy()
+        self.train_precision = torchmetrics.Precision()
+        self.val_precision = torchmetrics.Precision()
+        self.train_recall = torchmetrics.Recall()
+        self.val_recall = torchmetrics.Recall()
+        self.train_F1 = torchmetrics.F1()
+        self.val_F1 = torchmetrics.F1()
 
         if training_kwargs["model_to_use"] == "x3d":
-            self.model = X3D_RoI(
+            self.model = X3D(
+                model_type=data_kwargs["dataset_type"],
                 crop_size=data_kwargs["resize"],
                 clip_length=data_kwargs["input_seq_size"],
                 **model_kwargs,
             )
-        elif training_kwargs["model_to_use"] == "slow_r50":
-            self.model = SlowR50(**model_kwargs)
+        elif training_kwargs["model_to_use"] == "slow":
+            self.model = SlowR50(
+                crop_size=data_kwargs["resize"],
+                clip_length=data_kwargs["input_seq_size"],
+                model_type=data_kwargs["dataset_type"],
+                **model_kwargs,
+            )
         print(self.model)
 
         # if self.logger is not None:
@@ -43,7 +58,7 @@ class IntentionPredictor(pl.LightningModule):
             num_classes=1, class_names=class_names, thres=0.5, mode="binary"
         )
 
-    def forward(self, x, boxes) -> Tensor:
+    def forward(self, x, boxes=None) -> Tensor:
         return self.model(x, boxes)
 
     def configure_optimizers(self):
@@ -57,42 +72,78 @@ class IntentionPredictor(pl.LightningModule):
     def training_step(self, batch, batch_idx) -> Tensor:
         clip, boxes, labels = batch["clip"], batch["boxes"], batch["label"]
         preds = self(clip, boxes)
-        # print(preds[0], labels[0])
-        acc = self.train_accuracy(torch.sigmoid(preds), labels)
         loss = self.bce_loss(preds, labels.float())
+
+        # Metrics
+        sig_preds = torch.sigmoid(preds)
+        acc = self.train_accuracy(sig_preds, labels)
+        recall = self.train_recall(sig_preds, labels)
+        precision = self.train_precision(sig_preds, labels)
+        f1 = self.train_F1(sig_preds, labels)
+
         # Log loss and metric
-        self.log("train_loss", loss)
-        self.log("train_accuracy", acc)
+        self.log("train/loss", loss)
+        self.log("train/accuracy", acc)
+        self.log("train/recall", recall)
+        self.log("train/precision", precision)
+        self.log("train/F1", f1)
+
+        # Log video
         if self.logger is not None and (
             batch_idx % self.training_kwargs["video_every"] == 0
         ):
             sample_clip = batch["original_clip"][0].cpu() / 255.0
-            sample_preds = torch.sigmoid(preds[: len(boxes[0])]).detach().cpu()
-            sample_boxes = batch["original_boxes"][0]
 
-            preview_video = self.visualization.draw_clip_range(
-                sample_clip, sample_preds, sample_boxes
-            )
-            self.logger.experiment.log(
-                {
-                    "train/video": wandb.Video(
-                        video_to_stream(np.array(preview_video), fps=self.fps),
-                        format="mp4",
-                        caption=f"True label: {labels[: len(boxes[0])].detach().cpu().numpy()}",
-                    ),
-                    "global_step": self.global_step
-                    # "video": wandb.Video(video_to_stream(clip, fps=self.fps), format="mp4")
-                }
-            )
+            if self.model_type == "detection":
+                sample_boxes = batch["original_boxes"][0]
+                sample_preds = sig_preds[: len(boxes[0])].detach().cpu()
+
+                preview_video = self.visualization.draw_clip_range(
+                    sample_clip, sample_preds, sample_boxes
+                )
+                self.logger.experiment.log(
+                    {
+                        "train/video": wandb.Video(
+                            video_to_stream(np.array(preview_video), fps=self.fps),
+                            format="mp4",
+                            caption=f"True label: {labels[: len(boxes[0])].detach().cpu().numpy()}",
+                        ),
+                        "global_step": self.global_step
+                        # "video": wandb.Video(video_to_stream(clip, fps=self.fps), format="mp4")
+                    }
+                )
+            else:
+                pred = 1.0 if sig_preds[0].item() > 0.5 else 0.0
+                self.logger.experiment.log(
+                    {
+                        "train/video": wandb.Video(
+                            video_to_stream(np.array(sample_clip), fps=self.fps),
+                            format="mp4",
+                            caption=f"True label: {labels[0].item()}, Pred: {pred} ({sig_preds[0].item():.2f})",
+                        ),
+                        "global_step": self.global_step
+                        # "video": wandb.Video(video_to_stream(clip, fps=self.fps), format="mp4")
+                    }
+                )
         return loss
 
     def validation_step(self, batch, batch_idx) -> Dict:
         clip, boxes, labels = batch["clip"], batch["boxes"], batch["label"]
-        preds = self.model(clip, boxes)
+        preds = self(clip, boxes)
         loss = self.bce_loss(preds, labels.float())
-        self.val_accuracy(torch.sigmoid(preds), labels)
-        self.log("val/acc", self.val_accuracy)
-        self.log("val/loss", loss)
+        sig_preds = torch.sigmoid(preds)
+
+        # Metrics
+        recall = self.val_recall(sig_preds, labels)
+        precision = self.val_precision(sig_preds, labels)
+        f1 = self.val_F1(sig_preds, labels)
+        acc = self.val_accuracy(sig_preds, labels)
+
+        self.log("val/loss", loss, on_step=True, on_epoch=True)
+        self.log("val/acc", acc, on_step=True, on_epoch=True)
+        self.log("val/recall", recall, on_step=True, on_epoch=True)
+        self.log("val/precision", precision, on_step=True, on_epoch=True)
+        self.log("val/f1", f1, on_step=True, on_epoch=True)
 
         return loss
 

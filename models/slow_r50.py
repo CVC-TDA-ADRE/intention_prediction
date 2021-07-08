@@ -414,7 +414,8 @@ def create_resnet_with_roi_head(
 
 root_dir = "https://dl.fbaipublicfiles.com/pytorchvideo/model_zoo"
 checkpoint_paths = {
-    "slow_r50": f"{root_dir}/kinetics/SLOW_8x8_R50.pyth",
+    "slow_r50_8": f"{root_dir}/kinetics/SLOW_8x8_R50.pyth",
+    "slow_r50_4": f"{root_dir}/kinetics/SLOW_4x16_R50.pyth",
     "slow_r50_detection": f"{root_dir}/ava/SLOW_4x16_R50_DETECTION.pyth",
     "c2d_r50": f"{root_dir}/kinetics/C2D_8x8_R50.pyth",
     "i3d_r50": f"{root_dir}/kinetics/I3D_8x8_R50.pyth",
@@ -424,6 +425,7 @@ checkpoint_paths = {
 class SlowR50(nn.Module):
     def __init__(
         self,
+        model_type="detection",
         crop_size=160,
         clip_length=10,
         model_num_class=400,
@@ -432,26 +434,51 @@ class SlowR50(nn.Module):
     ):
         super(SlowR50, self).__init__()
 
-        self.model = create_resnet_with_roi_head(
-            # input_crop_size=crop_size,
-            # input_clip_length=clip_length,
-            head_activation=None,
-            model_num_class=model_num_class,
-            **kwargs,
-        )
+        self.model_type = model_type
+        if model_type == "detection":
+            model_name = "slow_r50_detection"
+            self.model = create_resnet_with_roi_head(
+                # input_crop_size=crop_size,
+                # input_clip_length=clip_length,
+                head_activation=None,
+                model_num_class=model_num_class,
+                **kwargs,
+            )
+        elif model_type == "classification":
+            frame_length = 4 if clip_length <= 6 else 8
+            model_name = f"slow_r50_{frame_length}"
+            spatial_scale = 32
+            self.model = create_resnet(
+                stem_conv_kernel_size=(1, 7, 7),
+                head_pool_kernel_size=(
+                    clip_length,
+                    crop_size[0] // spatial_scale,
+                    crop_size[1] // spatial_scale,
+                ),
+                head_activation=None,
+                model_num_class=model_num_class,
+                **kwargs,
+            )
+        else:
+            raise ValueError(
+                f"Please enter a valid model type (classification, detection) not {model_type}"
+            )
         initialize_weights(self.model)
         if model_pretraining:
             print("Loading from pre-trained network")
             checkpoint = torch.hub.load_state_dict_from_url(
-                checkpoint_paths["slow_r50_detection"],
+                checkpoint_paths[model_name],
                 progress=True,
                 map_location="cpu",
             )
             state_dict = checkpoint["model_state"]
             load_state_dict_flexible(self.model, state_dict)
 
-    def forward(self, x, bboxes):
-        return self.model(x, bboxes)
+    def forward(self, x, bboxes=None):
+        if self.model_type == "detection":
+            return self.model(x, bboxes)
+        else:
+            return self.model(x)
 
 
 if __name__ == "__main__":

@@ -1,5 +1,6 @@
 import pytorch_lightning as pl
 from data.intention_dataset import IntentionDataset
+from data.intention_dataset_classification import IntentionDatasetClass
 from torch.utils.data import DataLoader
 import torch
 
@@ -15,10 +16,14 @@ def collate(batch):
     for item in batch:
         clips.append(item[0])
         original_clips.append(item[1])
-        boxes.append(item[2].float())
-        original_boxes.append(item[3])
-        labels.extend(item[4])
-        paths.append(item[5])
+        labels.extend(item[2]) if isinstance(item[2], list) else labels.append(item[2])
+        paths.append(item[3])
+        if len(item) > 4:
+            boxes.append(item[4].float())
+            original_boxes.append(item[5])
+        else:
+            boxes = None
+            original_boxes = None
 
     output = {
         "clip": torch.stack(clips),
@@ -37,6 +42,7 @@ class IntentionDataloader(pl.LightningDataModule):
         self,
         train_path,
         val_path=None,
+        dataset_type="detection",
         batch_size=4,
         num_workers=2,
         pin_memory=False,
@@ -48,17 +54,33 @@ class IntentionDataloader(pl.LightningDataModule):
         self.batch_size = batch_size
         self.num_workers = num_workers
         self.pin_memory = pin_memory
+        self.dataset_type = dataset_type
         self.kwargs = kwargs
 
     def setup(self, stage=None):
         # Assign train/val datasets for use in dataloaders
         if stage == "fit" or stage is None:
-            self.train_data = IntentionDataset(self.train_path, **self.kwargs)
+            if self.dataset_type == "detection":
+                if "scale_crop" in self.kwargs:
+                    del self.kwargs["scale_crop"]
 
-            if self.val_path is not None:
-                self.val_data = IntentionDataset(self.val_path, **self.kwargs)
+                self.train_data = IntentionDataset(self.train_path, **self.kwargs)
+
+                if self.val_path is not None:
+                    self.val_data = IntentionDataset(self.val_path, **self.kwargs)
+                else:
+                    self.val_data = None
+            elif self.dataset_type == "classification":
+                self.train_data = IntentionDatasetClass(self.train_path, **self.kwargs)
+
+                if self.val_path is not None:
+                    self.val_data = IntentionDatasetClass(self.val_path, **self.kwargs)
+                else:
+                    self.val_data = None
             else:
-                self.val_data = None
+                raise ValueError(
+                    "Please enter a valid dataset type (classification, detection)"
+                )
 
         # Assign test dataset for use in dataloader(s)
         if stage == "test" or stage is None:
@@ -92,11 +114,12 @@ class IntentionDataloader(pl.LightningDataModule):
 if __name__ == "__main__":
     dataloader = IntentionDataloader(
         "/datatmp/Datasets/intention_prediction/JAAD/processed_annotations/train.csv",
-        resize=160,
+        resize=[256, 256],
+        dataset_type="detection",
     )
     dataloader.setup("fit")
     batch = next(iter(dataloader.train_dataloader()))
-    print("boxes: ", len(batch["boxes"]), type(batch["boxes"]))
+    # print("boxes: ", len(batch["boxes"]), type(batch["boxes"]))
     print("clip: ", batch["clip"].shape, type(batch["clip"]))
     print("label: ", batch["label"].shape, type(batch["label"]))
     print(batch["label"])

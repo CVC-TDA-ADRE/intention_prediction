@@ -5,6 +5,7 @@ import torch.nn as nn
 from pytorchvideo.layers.utils import set_attributes
 from torchvision.ops import RoIAlign
 from pytorchvideo.models.weight_init import init_net_weights
+from pytorchvideo.models.x3d import ProjectedPool
 
 
 class Net(nn.Module):
@@ -134,6 +135,9 @@ def create_res_roi_pooling_head(
         pool_model = None
     elif pool == nn.AdaptiveAvgPool3d:
         pool_model = pool(output_size)
+    elif isinstance(pool, ProjectedPool):
+        print("using projectedpool")
+        pool_model = pool
     else:
         pool_model = pool(
             kernel_size=pool_kernel_size, stride=pool_stride, padding=pool_padding
@@ -185,6 +189,7 @@ class DetectionBBoxNetwork(nn.Module):
                 using RoIAlignRotated.
         """
         features = self.model(x)
+        # print(features.shape)
         out = self.detection_head(features, bboxes)
         return out.view(out.shape[0], -1)
 
@@ -247,6 +252,7 @@ class ResNetRoIHead(nn.Module):
         # Performs 3d pooling.
         if self.pool is not None:
             x = self.pool(x)
+
         # Performs roi layer using bboxes
         if self.roi_layer is not None:
             temporal_dim = x.shape[-3]
@@ -255,6 +261,7 @@ class ResNetRoIHead(nn.Module):
                     "Temporal dimension should be 1. Consider modifying the pool layer."
                 )
             x = torch.squeeze(x, -3)
+            # print(x.shape)
             x = self.roi_layer(x, bboxes)
             # Performs spatial 2d pooling.
             if self.pool_spatial is not None:

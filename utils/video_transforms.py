@@ -1,4 +1,19 @@
 import torch
+import numpy as np
+
+
+def crop_video_bbox(video, boxes_coord, height, width, scale=1.0):
+    boxes_coord = np.array(boxes_coord)
+    (left, top), (right, bottom) = boxes_coord[:, :2].min(0), boxes_coord[:, 2:].max(0)
+    scale -= 1
+    local_width = right - left
+    local_height = bottom - top
+    new_bottom = min(int(bottom + (local_height * scale) / 2), int(height))
+    new_top = max(int(top - (local_height * scale) / 2), 0)
+    new_left = max(int(left - (local_width * scale) / 2), 0)
+    new_right = min(int(right + (local_width * scale) / 2), int(width))
+    boxes_coord = np.array([new_left, new_top, new_right, new_bottom])
+    return video[:, new_top:new_bottom, new_left:new_right, :], boxes_coord
 
 
 def _is_tensor_video_clip(clip):
