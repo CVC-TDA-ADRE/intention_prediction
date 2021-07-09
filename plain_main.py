@@ -118,6 +118,9 @@ data_config = config["DATA"]
 training_config = config["TRAINING"]
 model_config = config["MODEL"]
 
+if isinstance(data_config["resize"], int):
+    data_config["resize"] = (data_config["resize"], data_config["resize"])
+
 if training_config["gpus"] >= 0:
     device = torch.device("cuda:" + str(training_config["gpus"]))
 

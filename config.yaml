@@ -1,8 +1,8 @@
 DATA:
-  train_path: /datatmp/Datasets/intention_prediction/JAAD/processed_annotations/train.csv
-  val_path: /datatmp/Datasets/intention_prediction/JAAD/processed_annotations/val.csv
+  train_path: /datatmp/Datasets/intention_prediction/PIE/processed_annotations/train.csv
+  val_path: /datatmp/Datasets/intention_prediction/PIE/processed_annotations/val.csv
   # val_path: null
-  dataset_type: classification
+  dataset_type: detection
   batch_size: 8
   num_workers: 8
   pin_memory: False
@@ -24,7 +24,7 @@ TRAINING:
   frac_train: 1.
   frac_val: 1.
   video_every: 100
-  model_to_use: slow
+  model_to_use: x3d
   log_every: 5
 
 MODEL:
