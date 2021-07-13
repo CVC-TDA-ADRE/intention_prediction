@@ -6,6 +6,7 @@ import torch.optim as optim
 import pytorch_lightning as pl
 from torch.functional import Tensor
 import torchmetrics
+from collections import deque
 
 from typing import Dict
 
@@ -24,6 +25,7 @@ class IntentionPredictor(pl.LightningModule):
         self.fps = data_kwargs["data_fps"]
         self.lr = self.training_kwargs["lr"]
         self.model_type = data_kwargs["dataset_type"]
+        self.checkpoints = deque()
 
         # Metrics
         self.train_accuracy = torchmetrics.Accuracy()
@@ -62,12 +64,15 @@ class IntentionPredictor(pl.LightningModule):
         return self.model(x, boxes)
 
     def configure_optimizers(self):
-        gen_optimiser = optim.Adam(
+        optimizer = optim.Adam(
             self.parameters(),
             lr=self.lr,
             betas=self.training_kwargs["betas"],
         )
-        return gen_optimiser
+        scheduler = optim.lr_scheduler.CosineAnnealingLR(
+            optimizer, self.training_kwargs["epochs"], last_epoch=-1
+        )
+        return [optimizer], [scheduler]
 
     def training_step(self, batch, batch_idx) -> Tensor:
         clip, boxes, labels = batch["clip"], batch["boxes"], batch["label"]
