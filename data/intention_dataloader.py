@@ -1,8 +1,9 @@
 import pytorch_lightning as pl
 from data.intention_dataset import IntentionDataset
 from data.intention_dataset_classification import IntentionDatasetClass
-from torch.utils.data import DataLoader
+from torch.utils.data import DataLoader, WeightedRandomSampler
 import torch
+import numpy as np
 
 
 def collate(batch):
@@ -27,10 +28,10 @@ def collate(batch):
 
     output = {
         "clip": torch.stack(clips),
-        "original_clip": original_clips,
+        "original_clip": torch.stack(original_clips),
         "boxes": boxes,
         "original_boxes": original_boxes,
-        "label": torch.tensor(labels).unsqueeze(1),
+        "label": torch.as_tensor(labels).unsqueeze(1),
         "video_paths": paths,
     }
 
@@ -43,6 +44,7 @@ class IntentionDataloader(pl.LightningDataModule):
         train_path,
         val_path=None,
         dataset_type="detection",
+        weighted_sampler=False,
         batch_size=4,
         num_workers=2,
         pin_memory=False,
@@ -55,6 +57,7 @@ class IntentionDataloader(pl.LightningDataModule):
         self.num_workers = num_workers
         self.pin_memory = pin_memory
         self.dataset_type = dataset_type
+        self.weighted_sampler = weighted_sampler
         self.kwargs = kwargs
 
     def setup(self, stage=None):
@@ -86,13 +89,41 @@ class IntentionDataloader(pl.LightningDataModule):
         if stage == "test" or stage is None:
             pass
 
+    def generate_weights(self):
+        count_label = self.train_data.count_labels_max()
+        weights_class = [
+            count_label["total"] / count_label[0],
+            count_label["total"] / count_label[1],
+        ]
+        weights = []
+        for sample in self.train_data.dataset:
+            labels = sample["label"]
+            res, count = np.unique(labels, return_counts=True)
+            if len(res) == 2:
+                weights += [weights_class[count.argmax()]]
+            else:
+                weights += [weights_class[int(res)]]
+
+        return weights
+
     def train_dataloader(self):
+
+        if self.weighted_sampler:
+            sampler = WeightedRandomSampler(
+                weights=self.generate_weights(), num_samples=self.train_data.__len__()
+            )
+            shuffle = False
+        else:
+            sampler = None
+            shuffle = True
+
         return DataLoader(
             self.train_data,
             batch_size=self.batch_size,
-            shuffle=True,
+            shuffle=shuffle,
             num_workers=self.num_workers,
             drop_last=True,
+            sampler=sampler,
             collate_fn=collate,
             pin_memory=self.pin_memory,
         )
@@ -113,7 +144,7 @@ class IntentionDataloader(pl.LightningDataModule):
 
 if __name__ == "__main__":
     dataloader = IntentionDataloader(
-        "/datatmp/Datasets/intention_prediction/JAAD/processed_annotations/train.csv",
+        "/datatmp/Datasets/intention_prediction/PIE/processed_annotations/train.csv",
         resize=[256, 256],
         dataset_type="detection",
     )

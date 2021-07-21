@@ -1,14 +1,15 @@
 DATA:
-  train_path: /datatmp/Datasets/intention_prediction/JAAD/processed_annotations/train.csv
-  val_path: /datatmp/Datasets/intention_prediction/JAAD/processed_annotations/val.csv
+  train_path: /datatmp/Datasets/intention_prediction/PIE/processed_annotations/train.csv
+  val_path: /datatmp/Datasets/intention_prediction/PIE/processed_annotations/val.csv
   # val_path: null
   dataset_type: detection
+  weighted_sampler: True
   batch_size: 8
   num_workers: 8
-  pin_memory: False
+  pin_memory: True
   desired_fps: 16
   input_seq_size: 4
-  frame_future: 1
+  frame_future: 4
   resize: 256
   overlap_percent: 0.8
   data_fps: 30
@@ -19,6 +20,7 @@ DATA:
 TRAINING:
   gpus: -1
   epochs: 5
+  optimizer: adamw
   lr: 0.001
   betas: [0.9, 0.999]
   frac_train: 1.

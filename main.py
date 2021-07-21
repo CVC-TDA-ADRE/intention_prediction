@@ -1,3 +1,4 @@
+import os
 import torch
 import wandb
 import yaml
@@ -31,21 +32,21 @@ def train(args):
 
     predictor = IntentionPredictor(data_config, training_config, **model_config)
 
+    callbacks = [SaveModelDescription()]
     if args.wandb:
         wandb.login()
+        os.makedirs(args.save_dir, exist_ok=True)
         logger = WandbLogger(
             name=args.name, project=args.project, config=config, save_dir=args.save_dir
         )
+        if training_config["save_checkpoints_every"] is not None:
+            callbacks.append(
+                CircularModelCheckpoint(
+                    period=training_config["save_checkpoints_every"], save_last_k=3
+                )
+            )
     else:
         logger = False
-
-    callbacks = [SaveModelDescription()]
-    if training_config["save_checkpoints_every"] is not None:
-        callbacks.append(
-            CircularModelCheckpoint(
-                period=training_config["save_checkpoints_every"], save_last_k=3
-            )
-        )
 
     trainer = pl.Trainer.from_argparse_args(
         args,
@@ -83,5 +84,8 @@ if __name__ == "__main__":
         "--accumulate_batch", type=int, default=1, help="Number of batch to accumulate"
     )
     # parser.add_argument("--auto_lr_find", action="store_true", help="Store checkpoints")
+    # Good practices:
+    #  --accelerator 'ddp'
+    #  --accelerator 'ddp'
     args = parser.parse_args()
     train(args)

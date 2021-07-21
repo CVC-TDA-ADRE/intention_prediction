@@ -10,6 +10,7 @@ import pickle
 import decord
 import numpy as np
 import pandas as pd
+from collections import defaultdict
 
 from utils.video_transforms import ToTensorVideo, crop_video_bbox
 from torchvision.transforms import Resize
@@ -60,6 +61,26 @@ class IntentionDatasetClass(Dataset):
         self.video_transform = transforms.Compose(transform_chain)
 
         decord.bridge.set_bridge("torch")
+
+    def count_labels_tot(self):
+        count = defaultdict(int)
+        for i in range(len(self.dataset)):
+            sample = self.dataset[i]
+            labels = sample["label"]
+            for label in labels:
+                count[int(label)] += 1
+                count["total"] += 1
+
+        return count
+
+    def count_labels_max(self):
+        count = defaultdict(int)
+        for i in range(len(self.dataset)):
+            sample = self.dataset[i]
+            count[int(np.mean(sample["label"]) >= 0.5)] += 1
+            count["total"] += 1
+
+        return count
 
     def process_df(self, df):
 

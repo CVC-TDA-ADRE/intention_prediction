@@ -14,7 +14,11 @@ import pickle
 import decord
 import numpy as np
 import pandas as pd
+from collections import defaultdict
 
+import sys
+
+sys.path.insert(0, os.getcwd())
 from utils.video_transforms import ToTensorVideo
 from utils.utils import assert_arr_continuous, find_closest_match
 
@@ -92,6 +96,7 @@ class IntentionDataset(Dataset):
             output_seq = int((self.data_fps / self.desired_fps) * self.frame_future)
 
             dataset = []
+            count = 0
             for name, group in data.groupby("video_path"):
                 k = 0
                 while k + input_seq + output_seq <= len(group):
@@ -122,7 +127,11 @@ class IntentionDataset(Dataset):
                                 "ids": ids,
                             }
                         )
+                    else:
+                        count += 1
                     k += stride
+
+            print("Number of skiped windows: ", count)
 
             with open(os.path.join(self.cache_dir, self.dataset_name), "wb") as handle:
                 pickle.dump(dataset, handle, protocol=pickle.HIGHEST_PROTOCOL)
@@ -137,13 +146,36 @@ class IntentionDataset(Dataset):
     def __len__(self):
         return len(self.dataset)
 
+    def count_labels_tot(self):
+        count = defaultdict(int)
+        for i in range(len(self.dataset)):
+            sample = self.dataset[i]
+            labels = sample["label"]
+            for label in labels:
+                count[int(label)] += 1
+                count["total"] += 1
+
+        return count
+
+    def count_labels_max(self):
+        count = defaultdict(int)
+        for i in range(len(self.dataset)):
+            sample = self.dataset[i]
+            count[int(np.mean(sample["label"]) >= 0.5)] += 1
+            count["total"] += 1
+
+        return count
+
     def __getitem__(self, sample_idx):
 
         sample = self.dataset[sample_idx]
         original_boxes = np.array(sample["bbox"])
         label = sample["label"]
+
         vr = decord.VideoReader(sample["video_path"])
         original_clip = vr.get_batch(range(sample["start"], sample["end"] + 1))
+        # assert len(original_clip) == len(range(sample["start"], sample["end"] + 1))
+
         height, width = original_clip.shape[1], original_clip.shape[2]
         boxes = clip_boxes_to_image(original_boxes, height, width)
         clip = self.video_transform(original_clip)
@@ -163,9 +195,10 @@ class IntentionDataset(Dataset):
 
 if __name__ == "__main__":
     dataset = IntentionDataset(
-        "/datatmp/Datasets/intention_prediction/JAAD/processed_annotations/train.csv",
+        "/datatmp/Datasets/intention_prediction/PIE/processed_annotations/train.csv",
         20,
         10,
     )
     print(dataset.__len__())
     print(dataset.__getitem__(0))
+    print(dataset.count_labels())

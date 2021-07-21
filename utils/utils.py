@@ -10,7 +10,8 @@ import torch.nn as nn
 
 
 def assert_arr_continuous(arr):
-    return arr.data.contiguous
+
+    return sorted(arr) == list(range(min(arr), max(arr) + 1))
 
 
 def find_closest_match(labels, len_box):
