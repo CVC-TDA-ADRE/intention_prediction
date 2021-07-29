@@ -13,7 +13,7 @@ import pandas as pd
 from collections import defaultdict
 
 from utils.video_transforms import ToTensorVideo, crop_video_bbox
-from torchvision.transforms import Resize
+from torchvision.transforms import Resize, RandomCrop, CenterCrop
 from utils.utils import assert_arr_continuous
 
 
@@ -26,12 +26,15 @@ class IntentionDatasetClass(Dataset):
         scale_crop=2,
         frame_future=0,
         desired_fps=20,
+        sample_rate=1,
         input_seq_size=10,
         resize=None,
         overlap_percent=0.8,
         data_fps=30,
+        random_fail_prob=0,
         image_mean=[0.45, 0.45, 0.45],
         image_std=[0.225, 0.225, 0.225],
+        train=False,
     ):
         # self.data_path = data_path
         self.input_seq_size = input_seq_size
@@ -39,23 +42,49 @@ class IntentionDatasetClass(Dataset):
         self.data_fps = data_fps
         self.desired_fps = desired_fps
         self.resize = resize
+        self.sample_rate = sample_rate
         self.scale_crop = scale_crop
         self.frame_future = frame_future
+        self.random_fail_prob = random_fail_prob
 
         # df = pd.read_csv(
         #     os.path.join(self.data_path, f"processed_annotations/{split_type}.csv")
         # )
-        self.cache_dir = os.path.join(os.path.dirname(annotation_path), "cache")
+        parent_folder = os.path.abspath(
+            os.path.join(os.path.dirname(annotation_path), os.pardir)
+        )
+        self.cache_dir = os.path.join(parent_folder, "cache")
         os.makedirs(self.cache_dir, exist_ok=True)
         file_name = os.path.basename(annotation_path).split(".")[0]
-        self.dataset_name = f"class_{file_name}_{input_seq_size}_{int(overlap_percent*100)}_{data_fps}_{desired_fps}.pkl"
+        self.dataset_name = f"class_{file_name}_{input_seq_size}_{int(overlap_percent*100)}_{data_fps}_{desired_fps}_{sample_rate}.pkl"
 
         df = pd.read_csv(annotation_path)
         self.dataset = self.process_df(df)
 
         transform_chain = [ToTensorVideo(), UniformTemporalSubsample(input_seq_size)]
         if resize:
-            transform_chain += [Resize(resize)]
+            increase_perc = 0.2
+            if train:
+                transform_chain += [
+                    Resize(
+                        (
+                            int(resize[0] * (1 + increase_perc)),
+                            int(resize[1] * (1 + increase_perc)),
+                        )
+                    )
+                ]
+                transform_chain += [RandomCrop(resize)]
+            else:
+                transform_chain += [
+                    Resize(
+                        (
+                            int(resize[0] * (1 + increase_perc)),
+                            int(resize[1] * (1 + increase_perc)),
+                        )
+                    )
+                ]
+                transform_chain += [CenterCrop(resize)]
+
         transform_chain += [Normalize(mean=image_mean, std=image_std)]
 
         self.video_transform = transforms.Compose(transform_chain)
@@ -90,7 +119,9 @@ class IntentionDatasetClass(Dataset):
                 lambda row: [row.x1, row.y1, row.x2, row.y2], axis=1
             )
 
-            input_seq = int((self.data_fps / self.desired_fps) * self.input_seq_size)
+            input_seq = int(
+                (self.data_fps / self.desired_fps) * self.input_seq_size * self.sample_rate
+            )
             stride = int(input_seq * (1 - self.overlap_percent)) + 1
             output_seq = int((self.data_fps / self.desired_fps) * self.frame_future)
 
@@ -140,8 +171,13 @@ class IntentionDatasetClass(Dataset):
         vr = decord.VideoReader(sample["video_path"])
         original_clip = vr.get_batch(range(sample["start"], sample["end"] + 1))
         height, width = original_clip.shape[1], original_clip.shape[2]
-        original_clip, _ = crop_video_bbox(
-            original_clip, original_boxes, height, width, scale=self.scale_crop
+        original_clip = crop_video_bbox(
+            original_clip,
+            original_boxes,
+            height,
+            width,
+            scale=self.scale_crop,
+            random_fail_prob=self.random_fail_prob,
         )
 
         clip = self.video_transform(original_clip)

@@ -30,8 +30,10 @@ class IntentionDataset(Dataset):
         self,
         annotation_path,
         desired_fps=20,
+        sample_rate=1,
         input_seq_size=10,
         frame_future=0,
+        mid_frame=False,
         resize=None,
         overlap_percent=0.8,
         data_fps=30,
@@ -42,17 +44,25 @@ class IntentionDataset(Dataset):
         self.input_seq_size = input_seq_size
         self.overlap_percent = overlap_percent
         self.data_fps = data_fps
+        self.sample_rate = sample_rate
         self.desired_fps = desired_fps
         self.resize = resize
         self.frame_future = frame_future
+        self.mid_frame = mid_frame
 
         # df = pd.read_csv(
         #     os.path.join(self.data_path, f"processed_annotations/{split_type}.csv")
         # )
-        self.cache_dir = os.path.join(os.path.dirname(annotation_path), "cache")
+        parent_folder = os.path.abspath(
+            os.path.join(os.path.dirname(annotation_path), os.pardir)
+        )
+        self.cache_dir = os.path.join(parent_folder, "cache")
         os.makedirs(self.cache_dir, exist_ok=True)
         file_name = os.path.basename(annotation_path).split(".")[0]
-        self.dataset_name = f"{file_name}_{input_seq_size}_{int(overlap_percent*100)}_{data_fps}_{desired_fps}_{frame_future}.pkl"
+        self.dataset_name = f"{file_name}_{input_seq_size}_{int(overlap_percent*100)}_{data_fps}_{desired_fps}_{sample_rate}_{frame_future}"
+        if self.mid_frame:
+            self.dataset_name += "_mid"
+        self.dataset_name += ".pkl"
 
         df = pd.read_csv(annotation_path)
         self.dataset = self.process_df(df)
@@ -91,7 +101,9 @@ class IntentionDataset(Dataset):
                 .drop(columns=["frame", "video_path"])
             )
             data = bb.join(ids).join(cross)
-            input_seq = int((self.data_fps / self.desired_fps) * self.input_seq_size)
+            input_seq = int(
+                (self.data_fps / self.desired_fps) * self.input_seq_size * self.sample_rate
+            )
             stride = int(input_seq * (1 - self.overlap_percent)) + 1
             output_seq = int((self.data_fps / self.desired_fps) * self.frame_future)
 
@@ -107,11 +119,15 @@ class IntentionDataset(Dataset):
                         start = frame_range[0]
                         end = frame_range[-1]
                         label = group.crossing_true.values[end_range - 1 + output_seq]
-                        bbox = group.bounding_box.values[end_range - 1]
+                        if self.mid_frame:
+                            box_index = (k + end_range) // 2
+                        else:
+                            box_index = end_range - 1
+                        bbox = group.bounding_box.values[box_index]
                         if len(label) != len(bbox):
                             label = find_closest_match(
                                 group.crossing_true.values[
-                                    end_range - 2 : end_range - 1 + output_seq
+                                    box_index - 1 : end_range - 1 + output_seq
                                 ],
                                 len(bbox),
                             )

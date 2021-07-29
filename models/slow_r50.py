@@ -422,6 +422,7 @@ checkpoint_paths = {
 }
 
 
+# TODO Not sure it works anymore
 class SlowR50(nn.Module):
     def __init__(
         self,
@@ -435,11 +436,18 @@ class SlowR50(nn.Module):
         super(SlowR50, self).__init__()
 
         self.model_type = model_type
+        spatial_scale = 32
         if model_type == "detection":
             model_name = "slow_r50_detection"
             self.model = create_resnet_with_roi_head(
                 # input_crop_size=crop_size,
                 # input_clip_length=clip_length,
+                head_pool_kernel_size=(
+                    clip_length,
+                    1,
+                    1,
+                ),
+                head_spatial_scale=1 / spatial_scale,
                 head_activation=None,
                 model_num_class=model_num_class,
                 **kwargs,
@@ -447,7 +455,6 @@ class SlowR50(nn.Module):
         elif model_type == "classification":
             frame_length = 4 if clip_length <= 6 else 8
             model_name = f"slow_r50_{frame_length}"
-            spatial_scale = 32
             self.model = create_resnet(
                 stem_conv_kernel_size=(1, 7, 7),
                 head_pool_kernel_size=(

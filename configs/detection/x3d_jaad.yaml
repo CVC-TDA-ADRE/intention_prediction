@@ -1,0 +1,40 @@
+DATA:
+  train_path: /datatmp/Datasets/intention_prediction/JAAD/processed_annotations/train.csv
+  val_path: /datatmp/Datasets/intention_prediction/JAAD/processed_annotations/val.csv
+  # val_path: null
+  dataset_type: detection
+  weighted_sampler: True
+  batch_size: 8
+  num_workers: 8
+  pin_memory: True
+  desired_fps: 16
+  input_seq_size: 4
+  frame_future: 8
+  sample_rate: 12
+  resize: 182
+  overlap_percent: 0.8
+  data_fps: 30
+  mid_frame: False
+  image_mean: [0.45, 0.45, 0.45]
+  image_std: [0.225, 0.225, 0.225]
+
+TRAINING:
+  gpus: -1
+  epochs: 5
+  optimizer: adamw
+  scheduler: cosine
+  stochastic_weight_avg: True
+  weight_decay: 0.01
+  lr: 0.001
+  betas: [0.9, 0.999]
+  frac_train: 1.
+  frac_val: 1.
+  video_every: 100
+  model_to_use: x3d
+  log_every: 5
+  save_checkpoints_every: 2000
+
+MODEL:
+  model_num_class: 1
+  model_pretraining: x3d_xs
+

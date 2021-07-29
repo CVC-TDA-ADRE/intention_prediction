@@ -26,14 +26,19 @@ def collate(batch):
             boxes = None
             original_boxes = None
 
-    output = {
-        "clip": torch.stack(clips),
-        "original_clip": torch.stack(original_clips),
-        "boxes": boxes,
-        "original_boxes": original_boxes,
-        "label": torch.as_tensor(labels).unsqueeze(1),
-        "video_paths": paths,
-    }
+    try:
+        output = {
+            "clip": torch.stack(clips),
+            "original_clip": original_clips,
+            "boxes": boxes,
+            "original_boxes": original_boxes,
+            "label": torch.as_tensor(labels).unsqueeze(1),
+            "video_paths": paths,
+        }
+    except RuntimeError as e:
+        print(e)
+        print(paths)
+        raise RuntimeError
 
     return output
 
@@ -66,6 +71,8 @@ class IntentionDataloader(pl.LightningDataModule):
             if self.dataset_type == "detection":
                 if "scale_crop" in self.kwargs:
                     del self.kwargs["scale_crop"]
+                if "random_fail_prob" in self.kwargs:
+                    del self.kwargs["random_fail_prob"]
 
                 self.train_data = IntentionDataset(self.train_path, **self.kwargs)
 
@@ -74,7 +81,12 @@ class IntentionDataloader(pl.LightningDataModule):
                 else:
                     self.val_data = None
             elif self.dataset_type == "classification":
-                self.train_data = IntentionDatasetClass(self.train_path, **self.kwargs)
+                if "mid_frame" in self.kwargs:
+                    del self.kwargs["mid_frame"]
+
+                self.train_data = IntentionDatasetClass(
+                    self.train_path, train=True, **self.kwargs
+                )
 
                 if self.val_path is not None:
                     self.val_data = IntentionDatasetClass(self.val_path, **self.kwargs)

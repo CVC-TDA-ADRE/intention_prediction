@@ -168,6 +168,7 @@ class ImgVisualizer(Visualizer):
         else:
             text_ls, box_facecolors = [], []
         text_ls, box_facecolors = list(text_ls), list(box_facecolors)
+        num_text_split = int(num_text_split)
         self.draw_multiple_text_upward(
             text_ls[:num_text_split][::-1],
             box_coordinate,

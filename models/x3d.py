@@ -372,6 +372,7 @@ class X3D(nn.Module):
                 input_crop_size=crop_size,
                 input_clip_length=clip_length,
                 model_num_class=model_num_class,
+                head_activation=None,
                 **kwargs,
             )
             if state_dict:

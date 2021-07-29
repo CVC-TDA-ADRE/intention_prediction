@@ -41,11 +41,11 @@ from torchvision import transforms
 
 import sys
 import copy
-from collections import deque
+from collections import deque, defaultdict
 
 sys.path.insert(0, os.getcwd())
-from utils.video_transforms import UniformTemporalSubsample
 from models.intention_predictor_inference import IntentionPredictor
+from utils.video_transforms import crop_video_bbox, UniformTemporalSubsample
 
 
 def clip_boxes_to_image(boxes: torch.Tensor, height: int, width: int) -> torch.Tensor:
@@ -107,6 +107,9 @@ class Detectron_Detector(Node):
         os.environ["CUDA_VISIBLE_DEVICES"] = str(gpu)
 
         # create subscriber
+        # self.subscription = self.create_subscription(
+        #     Image, topic_in, self.listener_callback, 5
+        # )
         sub_img = Subscriber(self, Image, topic_in)
         sub_detections = Subscriber(self, Detections2DArray, topic_in_detect)
 
@@ -118,6 +121,9 @@ class Detectron_Detector(Node):
         )
         ats.registerCallback(self.listener_callback_withdets)
         self.get_logger().info("Listening to (%s, %s) topics" % (topic_in, topic_in_detect))
+
+        # # self.subscription  # prevent unused variable warning
+        # self.get_logger().info("Listening to %s topic" % topic_in)
 
         # create publisher
         self.publisher_intent = self.create_publisher(PointCloud2, topic_intent, 5)
@@ -133,11 +139,13 @@ class Detectron_Detector(Node):
         self.get_logger().info("intention model initialized")
 
         # Image stack
-        self.images = deque()
+        self.store_detections = defaultdict(deque)
+        self.last_detect_update = {}
         self.count = 0
 
     def _msg2detections(self, msg):
         detections = []
+        idx_detect = []
         for obj_indx in range(len(msg.detections)):
             detection = msg.detections[obj_indx]
             # TODO: Adapt for each possible dataset
@@ -147,10 +155,44 @@ class Detectron_Detector(Node):
                     "y1": detection.center_y - detection.size_y / 2.0,
                     "x2": detection.center_x + detection.size_x / 2.0,
                     "y2": detection.center_y + detection.size_y / 2.0,
+                    # "instance": detection.instance,
+                    # "label": detection.label,
                 }
+                idx_detect.append(detection.instance)
                 detections.append([bbox["x1"], bbox["y1"], bbox["x2"], bbox["y2"]])
 
-        return np.asarray(detections)
+        return np.asarray(detections), np.asarray(idx_detect)
+
+    def prepare_detections(self, img, detections, idx_detection):
+
+        warmup = True
+        for box, idx in zip(detections, idx_detection):
+            if idx == -1:
+                continue
+            ped_clip = crop_video_bbox(
+                torch.from_numpy(img).unsqueeze(0),
+                [box],
+                self.original_height,
+                self.original_width,
+                scale=self.scale_crop,
+            )
+            ped_clip = self.transform(ped_clip.squeeze(0).numpy())
+            if len(self.store_detections[idx]) < self.input_size_needed:
+                self.store_detections[idx].append(ped_clip.squeeze(0))
+            else:
+                self.store_detections[idx].popleft()
+                self.store_detections[idx].append(ped_clip.squeeze(0))
+                warmup = False
+            self.last_detect_update[idx] = -1
+
+        # Cleanup
+        for idx in list(self.store_detections.keys()):
+            self.last_detect_update[idx] += 1
+            if self.last_detect_update[idx] > 5:
+                del self.last_detect_update[idx]
+                del self.store_detections[idx]
+
+        return warmup
 
     def listener_callback_withdets(self, msg_img, msg_dets):
         # transform message
@@ -159,22 +201,21 @@ class Detectron_Detector(Node):
             original_img.shape[0],
             original_img.shape[1],
         )
-        detections = self._msg2detections(msg_dets)
+        detections, idx_detect = self._msg2detections(msg_dets)
+        warmup = self.prepare_detections(original_img, detections, idx_detect)
 
-        if len(self.images) < self.input_size_needed:
-            img = self.transform(original_img)
-            self.images.append(img)
+        if warmup:
             return
         else:
-            self.images.popleft()
-            img = self.transform(original_img)
-            self.images.append(img)
 
             if detections.size == 0:
                 return
 
             # Compute intention
-            intentions = self._run_model(self.images, detections)
+            intentions = self._run_model(idx_detect)
+
+            if not all(intentions.shape):
+                return
 
             # Publish
             msg_intentions = self.array_to_msg(intentions)
@@ -182,7 +223,7 @@ class Detectron_Detector(Node):
             self.publisher_intent.publish(msg_intentions)
 
             # Save Image
-            if self.path_out != "" and all(intentions.shape):
+            if self.path_out != "":
                 os.makedirs(self.path_out, exist_ok=True)
                 filename_out = os.path.join(self.path_out, f"image_{self.count}.jpg")
                 self.count += 1
@@ -215,10 +256,18 @@ class Detectron_Detector(Node):
         self.sample_rate = data_config["sample_rate"]
         self.input_size_needed = self.sample_rate * input_seq_size
 
+        increase_perc = 0.2
+        self.scale_crop = data_config["scale_crop"]
         self.transform = transforms.Compose(
             [
                 transforms.ToTensor(),
-                transforms.Resize(self.resize[0]),
+                transforms.Resize(
+                    (
+                        int(self.resize[0] * (1 + increase_perc)),
+                        int(self.resize[1] * (1 + increase_perc)),
+                    )
+                ),
+                transforms.RandomCrop(self.resize),
                 transforms.Normalize(mean=self.image_mean, std=self.image_std),
             ]
         )
@@ -234,24 +283,26 @@ class Detectron_Detector(Node):
         return new_image
 
     @torch.no_grad()
-    def _run_model(self, img, detect):
+    def _run_model(self, idx_detect):
 
-        clip = torch.stack(list(img), axis=1)
-        clip = self.sampling(clip).unsqueeze(0).float().cuda()
-        boxes = clip_boxes_to_image(detect, self.original_height, self.original_width)
-        new_h, new_w = clip.shape[3], clip.shape[4]
-        if self.original_width < self.original_height:
-            boxes *= float(new_h) / self.original_height
-        else:
-            boxes *= float(new_w) / self.original_width
-        boxes = clip_boxes_to_image(boxes, new_h, new_w)
-        boxes = [torch.from_numpy(boxes).float().cuda()]
+        predictions = []
+        for idx in idx_detect:
+            if (
+                idx in self.store_detections
+                and len(self.store_detections[idx]) == self.input_size_needed
+            ):
+                clip = torch.stack(list(self.store_detections[idx]), axis=1)
+                clip = self.sampling(clip).unsqueeze(0).float().cuda()
+                # Get predictions
+                pred = self.model(clip, None).squeeze(0)
+            else:
+                pred = torch.as_tensor([-1], device=torch.device("cuda"))
+            # self.get_logger().info(f"Pred shape {pred.shape}")
+            predictions += [pred]
 
-        # Get predictions
-        outputs = self.model(clip, boxes)
         torch.cuda.synchronize()
 
-        return outputs
+        return torch.stack(predictions, axis=0)
 
     def array_to_msg(self, intents):
         intents = intents.detach().cpu().numpy()

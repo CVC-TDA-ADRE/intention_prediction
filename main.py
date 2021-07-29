@@ -30,7 +30,9 @@ def train(args):
         print("Warning: Only 1 GPU using no accelerator")
         args.accelerator = None
 
-    predictor = IntentionPredictor(data_config, training_config, **model_config)
+    predictor = IntentionPredictor(
+        data_config, training_config, data_len=len(data.train_dataloader()), **model_config
+    )
 
     callbacks = [SaveModelDescription()]
     if args.wandb:
@@ -60,6 +62,7 @@ def train(args):
         accumulate_grad_batches=args.accumulate_batch,
         checkpoint_callback=False,
         callbacks=callbacks,
+        stochastic_weight_avg=training_config["stochastic_weight_avg"],
         # auto_lr_find=args.auto_lr_find,
     )
     if args.wandb:

@@ -1,33 +1,21 @@
-import torch.nn as nn
 import pytorch_lightning as pl
 from torch.functional import Tensor
-import torchmetrics
-from collections import deque
 from models.x3d import X3D
 from models.slow_r50 import SlowR50
 from utils.visualization import VideoVisualizer
 
 
 class IntentionPredictor(pl.LightningModule):
-    def __init__(self, data_kwargs, training_kwargs, **model_kwargs) -> None:
+    def __init__(self, data_kwargs, training_kwargs, data_len, **model_kwargs) -> None:
         super(IntentionPredictor, self).__init__()
 
         self.training_kwargs = training_kwargs
-        self.bce_loss = nn.BCEWithLogitsLoss()
+        self.data_kwargs = data_kwargs
+        self.model_kwargs = model_kwargs
         self.fps = data_kwargs["data_fps"]
         self.lr = self.training_kwargs["lr"]
         self.model_type = data_kwargs["dataset_type"]
-        self.checkpoints = deque()
-
-        # Metrics
-        self.train_accuracy = torchmetrics.Accuracy()
-        self.val_accuracy = torchmetrics.Accuracy()
-        self.train_precision = torchmetrics.Precision()
-        self.val_precision = torchmetrics.Precision()
-        self.train_recall = torchmetrics.Recall()
-        self.val_recall = torchmetrics.Recall()
-        self.train_F1 = torchmetrics.F1()
-        self.val_F1 = torchmetrics.F1()
+        self.data_len = data_len
 
         if training_kwargs["model_to_use"] == "x3d":
             self.model = X3D(

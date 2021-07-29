@@ -17,14 +17,18 @@ from models.slow_r50 import SlowR50
 
 
 class IntentionPredictor(pl.LightningModule):
-    def __init__(self, data_kwargs, training_kwargs, **model_kwargs) -> None:
+    def __init__(self, data_kwargs, training_kwargs, data_len=0, **model_kwargs) -> None:
         super(IntentionPredictor, self).__init__()
 
+        self.save_hyperparameters()
+
         self.training_kwargs = training_kwargs
+        self.data_kwargs = data_kwargs
         self.bce_loss = nn.BCEWithLogitsLoss()
         self.fps = data_kwargs["data_fps"]
         self.lr = self.training_kwargs["lr"]
         self.model_type = data_kwargs["dataset_type"]
+        self.data_len = data_len
         self.checkpoints = deque()
 
         # Metrics
@@ -70,29 +74,48 @@ class IntentionPredictor(pl.LightningModule):
                 self.parameters(),
                 lr=self.lr,
                 betas=self.training_kwargs["betas"],
+                weight_decay=self.training_kwargs["weight_decay"],
             )
         elif self.training_kwargs["optimizer"] == "adamw":
             optimizer = optim.AdamW(
                 self.parameters(),
                 lr=self.lr,
                 betas=self.training_kwargs["betas"],
+                weight_decay=self.training_kwargs["weight_decay"],
             )
-        scheduler = optim.lr_scheduler.CosineAnnealingLR(
-            optimizer, self.training_kwargs["epochs"], last_epoch=-1
-        )
+        else:
+            raise ValueError("Please enter a valid optimizer (adam, admw)")
+
+        if self.training_kwargs["scheduler"] == "cosine":
+            scheduler = optim.lr_scheduler.CosineAnnealingLR(
+                optimizer, self.training_kwargs["epochs"], last_epoch=-1
+            )
+        elif self.training_kwargs["scheduler"] == "1cycle":
+            scheduler = optim.lr_scheduler.OneCycleLR(
+                optimizer,
+                self.lr,
+                epochs=self.training_kwargs["epochs"],
+                steps_per_epoch=self.data_len,
+            )
+        else:
+            raise ValueError("Please enter a valid scheduler (cosine, 1cycle)")
+
         return [optimizer], [scheduler]
 
     @torch.no_grad()
-    def save_video(self, sample_clip, sig_preds, sample_boxes, labels):
+    def save_video(
+        self, sample_clip, sig_preds, labels, sample_boxes=None, mode="train", name="video"
+    ):
 
         if self.model_type == "detection":
+            sample_boxes = sample_boxes[0]
             sample_preds = sig_preds[: len(sample_boxes)].cpu()
             preview_video = self.visualization.draw_clip_range(
                 sample_clip, sample_preds, sample_boxes
             )
             self.logger.experiment.log(
                 {
-                    "train/video": wandb.Video(
+                    f"{mode}/{name}": wandb.Video(
                         video_to_stream(np.array(preview_video), fps=self.fps),
                         format="mp4",
                         caption=f"True label: {labels[: len(sample_boxes)].cpu().numpy()}",
@@ -104,10 +127,10 @@ class IntentionPredictor(pl.LightningModule):
             pred = 1.0 if sig_preds[0].detach() > 0.5 else 0.0
             self.logger.experiment.log(
                 {
-                    "train/video": wandb.Video(
+                    f"{mode}/video": wandb.Video(
                         video_to_stream(np.array(sample_clip), fps=self.fps),
                         format="mp4",
-                        caption=f"True label: {labels[0].detach()}, Pred: {pred} ({sig_preds[0].detach():.2f})",
+                        caption=f"True label: {labels[0].detach()}, Pred: {pred} ({sig_preds[0].item():.2f})",
                     ),
                     "global_step": self.global_step,
                 }
@@ -137,8 +160,11 @@ class IntentionPredictor(pl.LightningModule):
             batch_idx % self.training_kwargs["video_every"] == 0
         ):
             sample_clip = batch["original_clip"][0].cpu() / 255.0
-            sample_boxes = batch["original_boxes"][0]
-            self.save_video(sample_clip, sig_preds, sample_boxes, labels)
+            self.save_video(sample_clip, sig_preds, labels, batch["original_boxes"])
+            # sample_clip = clip[0].cpu().permute(1, 2, 3, 0) * torch.as_tensor(
+            #     self.data_kwargs["image_std"]
+            # ) + torch.as_tensor(self.data_kwargs["image_mean"])
+            # self.save_video(sample_clip, sig_preds, labels, boxes)
 
         return loss
 
@@ -154,11 +180,31 @@ class IntentionPredictor(pl.LightningModule):
         f1 = self.val_F1(sig_preds, labels)
         acc = self.val_accuracy(sig_preds, labels)
 
+        # if not torch.is_nonzero(f1):
+        #     sample_clip = batch["original_clip"][0].cpu() / 255.0
+        #     sample_boxes = batch["original_boxes"][0] if batch["original_boxes"] else None
+        #     self.save_video(
+        #         sample_clip, sig_preds, labels, sample_boxes, mode="val", name="bad exemple"
+        #     )
+
         self.log("val/loss", loss, on_step=True, on_epoch=True)
         self.log("val/acc", acc, on_step=True, on_epoch=True)
         self.log("val/recall", recall, on_step=True, on_epoch=True)
         self.log("val/precision", precision, on_step=True, on_epoch=True)
         self.log("val/f1", f1, on_step=True, on_epoch=True)
+
+        # Log video
+        if self.logger is not None and (
+            batch_idx % (self.training_kwargs["video_every"] // 10) == 0
+        ):
+            sample_clip = batch["original_clip"][0].cpu()
+            self.save_video(
+                sample_clip, sig_preds, labels, batch["original_boxes"], mode="val"
+            )
+            # sample_clip = clip[0].cpu().permute(1, 2, 3, 0) * torch.as_tensor(
+            #     self.data_kwargs["image_std"]
+            # ) + torch.as_tensor(self.data_kwargs["image_mean"])
+            # self.save_video(sample_clip, sig_preds, labels, boxes)
 
         return loss
 
