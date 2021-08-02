@@ -169,7 +169,7 @@ class Detectron_Detector(Node):
         for box, idx in zip(detections, idx_detection):
             if idx == -1:
                 continue
-            ped_clip = crop_video_bbox(
+            ped_clip, _ = crop_video_bbox(
                 torch.from_numpy(img).unsqueeze(0),
                 [box],
                 self.original_height,

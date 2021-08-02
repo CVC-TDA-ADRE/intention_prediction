@@ -71,8 +71,10 @@ class IntentionDataloader(pl.LightningDataModule):
             if self.dataset_type == "detection":
                 if "scale_crop" in self.kwargs:
                     del self.kwargs["scale_crop"]
-                if "random_fail_prob" in self.kwargs:
-                    del self.kwargs["random_fail_prob"]
+                if "random_fail_detect" in self.kwargs:
+                    del self.kwargs["random_fail_detect"]
+                if "random_fail_track" in self.kwargs:
+                    del self.kwargs["random_fail_track"]
 
                 self.train_data = IntentionDataset(self.train_path, **self.kwargs)
 

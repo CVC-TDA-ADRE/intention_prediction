@@ -107,6 +107,9 @@ class IntentionPredictor(pl.LightningModule):
         self, sample_clip, sig_preds, labels, sample_boxes=None, mode="train", name="video"
     ):
 
+        max_frames = 30
+        sample_clip = sample_clip[-max_frames:]
+
         if self.model_type == "detection":
             sample_boxes = sample_boxes[0]
             sample_preds = sig_preds[: len(sample_boxes)].cpu()

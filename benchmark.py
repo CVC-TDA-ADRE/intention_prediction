@@ -52,13 +52,13 @@ def main():
     for i, data in enumerate(data_loader):
 
         torch.cuda.synchronize()
-        start_time = time.perf_counter()
 
         with torch.no_grad():
             clip, boxes = data["clip"], data["boxes"]
             clip = clip.to(f"cuda:{args.gpu}")
             if boxes is not None:
                 boxes = [boxes[0].to(f"cuda:{args.gpu}")]
+            start_time = time.perf_counter()
             _ = predictor(clip, boxes)
 
         torch.cuda.synchronize()

@@ -1,19 +1,21 @@
+import os
+import pickle
+import random
+from collections import defaultdict
+
+import decord
+import numpy as np
+import torch
+import pandas as pd
 from torch.utils.data import Dataset
-from torchvision import transforms
+from torchvision.transforms import Resize, RandomCrop, CenterCrop, Compose
 from pytorchvideo.transforms import (
     Normalize,
     # ShortSideScale,
     UniformTemporalSubsample,
 )
-import os
-import pickle
-import decord
-import numpy as np
-import pandas as pd
-from collections import defaultdict
 
 from utils.video_transforms import ToTensorVideo, crop_video_bbox
-from torchvision.transforms import Resize, RandomCrop, CenterCrop
 from utils.utils import assert_arr_continuous
 
 
@@ -31,7 +33,8 @@ class IntentionDatasetClass(Dataset):
         resize=None,
         overlap_percent=0.8,
         data_fps=30,
-        random_fail_prob=0,
+        random_fail_detect=0,
+        random_fail_track=0,
         image_mean=[0.45, 0.45, 0.45],
         image_std=[0.225, 0.225, 0.225],
         train=False,
@@ -45,7 +48,8 @@ class IntentionDatasetClass(Dataset):
         self.sample_rate = sample_rate
         self.scale_crop = scale_crop
         self.frame_future = frame_future
-        self.random_fail_prob = random_fail_prob
+        self.random_fail_detect = random_fail_detect
+        self.random_fail_track = random_fail_track
 
         # df = pd.read_csv(
         #     os.path.join(self.data_path, f"processed_annotations/{split_type}.csv")
@@ -58,8 +62,8 @@ class IntentionDatasetClass(Dataset):
         file_name = os.path.basename(annotation_path).split(".")[0]
         self.dataset_name = f"class_{file_name}_{input_seq_size}_{int(overlap_percent*100)}_{data_fps}_{desired_fps}_{sample_rate}.pkl"
 
-        df = pd.read_csv(annotation_path)
-        self.dataset = self.process_df(df)
+        self.df = pd.read_csv(annotation_path)
+        self.dataset = self.process_df(self.df)
 
         transform_chain = [ToTensorVideo(), UniformTemporalSubsample(input_seq_size)]
         if resize:
@@ -87,7 +91,7 @@ class IntentionDatasetClass(Dataset):
 
         transform_chain += [Normalize(mean=image_mean, std=image_std)]
 
-        self.video_transform = transforms.Compose(transform_chain)
+        self.video_transform = Compose(transform_chain)
 
         decord.bridge.set_bridge("torch")
 
@@ -163,6 +167,28 @@ class IntentionDatasetClass(Dataset):
     def __len__(self):
         return len(self.dataset)
 
+    def get_other_pedestrian(self, sample):
+        all_ped_df = self.df[
+            (self.df.video_path == sample["video_path"])
+            & ((self.df.frame >= sample["start"]) & (self.df.frame <= sample["end"]))
+        ]
+        ids = all_ped_df.ID.unique()
+        if len(ids) > 1:
+            other_id = random.choices(
+                ids, weights=[1 if i != sample["ids"] else 0 for i in ids]
+            )[0]
+        else:
+            return None
+
+        all_ped_df = all_ped_df[all_ped_df.ID == other_id]
+        all_ped_df["bounding_box"] = all_ped_df[["x1", "y1", "x2", "y2"]].apply(
+            lambda row: [row.x1, row.y1, row.x2, row.y2], axis=1
+        )
+        other_boxes = np.array(list(all_ped_df.bounding_box.values))
+        if len(other_boxes) != len(sample["bbox"]):
+            return None
+        return other_boxes
+
     def __getitem__(self, sample_idx):
 
         sample = self.dataset[sample_idx]
@@ -171,18 +197,39 @@ class IntentionDatasetClass(Dataset):
         vr = decord.VideoReader(sample["video_path"])
         original_clip = vr.get_batch(range(sample["start"], sample["end"] + 1))
         height, width = original_clip.shape[1], original_clip.shape[2]
-        original_clip = crop_video_bbox(
+
+        ped_clip, (max_height, max_width) = crop_video_bbox(
             original_clip,
             original_boxes,
             height,
             width,
             scale=self.scale_crop,
-            random_fail_prob=self.random_fail_prob,
+            random_fail_prob=self.random_fail_detect,
         )
 
-        clip = self.video_transform(original_clip)
+        if self.random_fail_track > 0:
+            other_boxes = self.get_other_pedestrian(sample)
+            if other_boxes is not None:
+                other_clip, _ = crop_video_bbox(
+                    original_clip,
+                    other_boxes,
+                    height,
+                    width,
+                    max_height=max_height,
+                    max_width=max_width,
+                    scale=self.scale_crop,
+                )
+                new_clip = []
+                for i in range(len(ped_clip)):
+                    if self.random_fail_track > random.uniform(0, 1):
+                        new_clip.append(other_clip[i])
+                    else:
+                        new_clip.append(ped_clip[i])
+                ped_clip = torch.stack(new_clip)
 
-        output = [clip, original_clip, label, sample["video_path"]]
+        clip = self.video_transform(ped_clip)
+
+        output = [clip, ped_clip, label, sample["video_path"]]
 
         return output
 
@@ -190,8 +237,8 @@ class IntentionDatasetClass(Dataset):
 if __name__ == "__main__":
     dataset = IntentionDatasetClass(
         "/datatmp/Datasets/intention_prediction/JAAD/processed_annotations/train.csv",
-        20,
-        10,
+        desired_fps=20,
+        input_seq_size=10,
     )
     print(dataset.__len__())
     print(dataset.__getitem__(0))

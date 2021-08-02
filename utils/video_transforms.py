@@ -18,11 +18,13 @@ def crop_video_bbox_follow(video, boxes_coord, height, width, scale=1.0):
     return video[:, new_top:new_bottom, new_left:new_right, :]
 
 
-def crop_video_bbox(video, boxes_coord, height, width, scale=1.0, random_fail_prob=0):
+def crop_video_bbox(video, boxes_coord, height, width, max_height=None, max_width=None, scale=1.0, random_fail_prob=0):
     new_video = []
     boxes_coord = np.array(boxes_coord, dtype=np.uintc)
-    max_width = (boxes_coord[:, 2] - boxes_coord[:, 0]).max()
-    max_height = (boxes_coord[:, 3] - boxes_coord[:, 1]).max()
+    if max_width is None:
+        max_width = (boxes_coord[:, 2] - boxes_coord[:, 0]).max()
+    if max_height is None:
+        max_height = (boxes_coord[:, 3] - boxes_coord[:, 1]).max()
     # resizing = torchvision.transforms.Resize(
     #     (int(max_height * scale), int(max_width * scale))
     # )
@@ -69,7 +71,7 @@ def crop_video_bbox(video, boxes_coord, height, width, scale=1.0, random_fail_pr
         frame = video[i, new_top:new_bottom, new_left:new_right, :]
         # frame = resizing(frame.permute(2, 0, 1)).permute(1, 2, 0)
         new_video.append(frame)
-    return torch.stack(new_video)
+    return torch.stack(new_video), (max_height, max_width)
 
 
 def _is_tensor_video_clip(clip):
