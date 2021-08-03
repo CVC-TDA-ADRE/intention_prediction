@@ -157,19 +157,20 @@ class IntentionPredictor(pl.LightningModule):
             # self.save_video(sample_clip, sig_preds, labels, boxes)
 
         # Metrics
-        acc = self.train_accuracy(sig_preds, labels)
-        self.log("train/accuracy", acc)
-        self.log("train/loss", loss)
-        if all(sig_preds < 0.5) and all(labels == 0):
-            recall = precision = f1 = 1.0
-        elif all(labels == 0):
-            return loss  # This case is ill-defined so no log
+        if all(labels == 0):  # This case is ill-defined
+            acc = self.train_accuracy(1 - sig_preds, 1 - labels)
+            recall = self.train_recall(1 - sig_preds, 1 - labels)
+            precision = self.train_precision(1 - sig_preds, 1 - labels)
+            f1 = self.train_F1(1 - sig_preds, 1 - labels)
         else:
+            acc = self.train_accuracy(sig_preds, labels)
             recall = self.train_recall(sig_preds, labels)
             precision = self.train_precision(sig_preds, labels)
             f1 = self.train_F1(sig_preds, labels)
 
         # Log loss and metric
+        self.log("train/accuracy", acc)
+        self.log("train/loss", loss)
         self.log("train/recall", recall)
         self.log("train/precision", precision)
         self.log("train/F1", f1)
@@ -196,18 +197,19 @@ class IntentionPredictor(pl.LightningModule):
             # self.save_video(sample_clip, sig_preds, labels, boxes)
 
         # Metrics
-        acc = self.val_accuracy(sig_preds, labels)
-        self.log("val/acc", acc, on_step=True, on_epoch=True)
-        self.log("val/loss", loss, on_step=True, on_epoch=True)
-        if all(sig_preds < 0.5) and all(labels == 0):
-            recall = precision = f1 = 1.0
-        elif all(labels == 0):
-            return loss
+        if all(labels == 0):  # This case is ill-defined
+            acc = self.train_accuracy(1 - sig_preds, 1 - labels)
+            recall = self.train_recall(1 - sig_preds, 1 - labels)
+            precision = self.train_precision(1 - sig_preds, 1 - labels)
+            f1 = self.train_F1(1 - sig_preds, 1 - labels)
         else:
+            acc = self.train_accuracy(sig_preds, labels)
             recall = self.train_recall(sig_preds, labels)
             precision = self.train_precision(sig_preds, labels)
             f1 = self.train_F1(sig_preds, labels)
 
+        self.log("val/acc", acc, on_step=True, on_epoch=True)
+        self.log("val/loss", loss, on_step=True, on_epoch=True)
         self.log("val/recall", recall, on_step=True, on_epoch=True)
         self.log("val/precision", precision, on_step=True, on_epoch=True)
         self.log("val/f1", f1, on_step=True, on_epoch=True)

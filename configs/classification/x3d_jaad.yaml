@@ -4,7 +4,7 @@ DATA:
   # val_path: null
   dataset_type: classification
   weighted_sampler: True
-  batch_size: 8
+  batch_size: 16
   num_workers: 8
   pin_memory: True
   desired_fps: 16
