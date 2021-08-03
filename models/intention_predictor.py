@@ -143,20 +143,7 @@ class IntentionPredictor(pl.LightningModule):
         clip, boxes, labels = batch["clip"], batch["boxes"], batch["label"]
         preds = self(clip, boxes)
         loss = self.bce_loss(preds, labels.float())
-
-        # Metrics
         sig_preds = torch.sigmoid(preds.detach())
-        acc = self.train_accuracy(sig_preds, labels)
-        recall = self.train_recall(sig_preds, labels)
-        precision = self.train_precision(sig_preds, labels)
-        f1 = self.train_F1(sig_preds, labels)
-
-        # Log loss and metric
-        self.log("train/loss", loss)
-        self.log("train/accuracy", acc)
-        self.log("train/recall", recall)
-        self.log("train/precision", precision)
-        self.log("train/F1", f1)
 
         # Log video
         if self.logger is not None and (
@@ -169,6 +156,24 @@ class IntentionPredictor(pl.LightningModule):
             # ) + torch.as_tensor(self.data_kwargs["image_mean"])
             # self.save_video(sample_clip, sig_preds, labels, boxes)
 
+        # Metrics
+        acc = self.train_accuracy(sig_preds, labels)
+        self.log("train/accuracy", acc)
+        self.log("train/loss", loss)
+        if all(sig_preds < 0.5) and all(labels == 0):
+            recall = precision = f1 = 1.0
+        elif all(labels == 0):
+            return loss  # This case is ill-defined so no log
+        else:
+            recall = self.train_recall(sig_preds, labels)
+            precision = self.train_precision(sig_preds, labels)
+            f1 = self.train_F1(sig_preds, labels)
+
+        # Log loss and metric
+        self.log("train/recall", recall)
+        self.log("train/precision", precision)
+        self.log("train/F1", f1)
+
         return loss
 
     def validation_step(self, batch, batch_idx) -> Dict:
@@ -176,25 +181,6 @@ class IntentionPredictor(pl.LightningModule):
         preds = self(clip, boxes)
         loss = nn.functional.binary_cross_entropy_with_logits(preds, labels.float())
         sig_preds = torch.sigmoid(preds)
-
-        # Metrics
-        recall = self.val_recall(sig_preds, labels)
-        precision = self.val_precision(sig_preds, labels)
-        f1 = self.val_F1(sig_preds, labels)
-        acc = self.val_accuracy(sig_preds, labels)
-
-        # if not torch.is_nonzero(f1):
-        #     sample_clip = batch["original_clip"][0].cpu() / 255.0
-        #     sample_boxes = batch["original_boxes"][0] if batch["original_boxes"] else None
-        #     self.save_video(
-        #         sample_clip, sig_preds, labels, sample_boxes, mode="val", name="bad exemple"
-        #     )
-
-        self.log("val/loss", loss, on_step=True, on_epoch=True)
-        self.log("val/acc", acc, on_step=True, on_epoch=True)
-        self.log("val/recall", recall, on_step=True, on_epoch=True)
-        self.log("val/precision", precision, on_step=True, on_epoch=True)
-        self.log("val/f1", f1, on_step=True, on_epoch=True)
 
         # Log video
         if self.logger is not None and (
@@ -208,6 +194,23 @@ class IntentionPredictor(pl.LightningModule):
             #     self.data_kwargs["image_std"]
             # ) + torch.as_tensor(self.data_kwargs["image_mean"])
             # self.save_video(sample_clip, sig_preds, labels, boxes)
+
+        # Metrics
+        acc = self.val_accuracy(sig_preds, labels)
+        self.log("val/acc", acc, on_step=True, on_epoch=True)
+        self.log("val/loss", loss, on_step=True, on_epoch=True)
+        if all(sig_preds < 0.5) and all(labels == 0):
+            recall = precision = f1 = 1.0
+        elif all(labels == 0):
+            return loss
+        else:
+            recall = self.train_recall(sig_preds, labels)
+            precision = self.train_precision(sig_preds, labels)
+            f1 = self.train_F1(sig_preds, labels)
+
+        self.log("val/recall", recall, on_step=True, on_epoch=True)
+        self.log("val/precision", precision, on_step=True, on_epoch=True)
+        self.log("val/f1", f1, on_step=True, on_epoch=True)
 
         return loss
 

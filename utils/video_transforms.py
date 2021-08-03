@@ -18,17 +18,24 @@ def crop_video_bbox_follow(video, boxes_coord, height, width, scale=1.0):
     return video[:, new_top:new_bottom, new_left:new_right, :]
 
 
-def crop_video_bbox(video, boxes_coord, height, width, max_height=None, max_width=None, scale=1.0, random_fail_prob=0):
+def crop_video_bbox(
+    video,
+    boxes_coord,
+    height,
+    width,
+    scale=1.0,
+    other_ped_box=None,
+    random_fail_detect=0,
+    random_fail_track=0,
+):
     new_video = []
     boxes_coord = np.array(boxes_coord, dtype=np.uintc)
-    if max_width is None:
-        max_width = (boxes_coord[:, 2] - boxes_coord[:, 0]).max()
-    if max_height is None:
-        max_height = (boxes_coord[:, 3] - boxes_coord[:, 1]).max()
+    max_width = (boxes_coord[:, 2] - boxes_coord[:, 0]).max()
+    max_height = (boxes_coord[:, 3] - boxes_coord[:, 1]).max()
     # resizing = torchvision.transforms.Resize(
     #     (int(max_height * scale), int(max_width * scale))
     # )
-    if random_fail_prob > 0:
+    if random_fail_detect > 0:
         random_crop = torchvision.transforms.RandomCrop(
             (int(max_height * scale), int(max_width * scale))
         )
@@ -37,10 +44,12 @@ def crop_video_bbox(video, boxes_coord, height, width, max_height=None, max_widt
 
     scale -= 1
     for i, bbox in enumerate(boxes_coord):
-        if random_crop and random_fail_prob > random.uniform(0, 1):
+        if random_crop is not None and random_fail_detect > random.uniform(0, 1):
             frame = random_crop(video[i].permute(2, 0, 1)).permute(1, 2, 0)
             new_video.append(frame)
             continue
+        if other_ped_box is not None and random_fail_track > random.uniform(0, 1):
+            bbox = other_ped_box[i]
         left, top, right, bottom = map(int, bbox)
         local_width = right - left
         local_height = bottom - top

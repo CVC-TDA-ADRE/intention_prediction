@@ -5,7 +5,8 @@ from collections import defaultdict
 
 import decord
 import numpy as np
-import torch
+
+# import torch
 import pandas as pd
 from torch.utils.data import Dataset
 from torchvision.transforms import Resize, RandomCrop, CenterCrop, Compose
@@ -198,34 +199,40 @@ class IntentionDatasetClass(Dataset):
         original_clip = vr.get_batch(range(sample["start"], sample["end"] + 1))
         height, width = original_clip.shape[1], original_clip.shape[2]
 
+        other_boxes = None
+        if self.random_fail_track > 0:
+            other_boxes = self.get_other_pedestrian(sample)
+
         ped_clip, (max_height, max_width) = crop_video_bbox(
             original_clip,
             original_boxes,
             height,
             width,
             scale=self.scale_crop,
-            random_fail_prob=self.random_fail_detect,
+            other_ped_box=other_boxes,
+            random_fail_detect=self.random_fail_detect,
+            random_fail_track=self.random_fail_track,
         )
 
-        if self.random_fail_track > 0:
-            other_boxes = self.get_other_pedestrian(sample)
-            if other_boxes is not None:
-                other_clip, _ = crop_video_bbox(
-                    original_clip,
-                    other_boxes,
-                    height,
-                    width,
-                    max_height=max_height,
-                    max_width=max_width,
-                    scale=self.scale_crop,
-                )
-                new_clip = []
-                for i in range(len(ped_clip)):
-                    if self.random_fail_track > random.uniform(0, 1):
-                        new_clip.append(other_clip[i])
-                    else:
-                        new_clip.append(ped_clip[i])
-                ped_clip = torch.stack(new_clip)
+        # if self.random_fail_track > 0:
+        #     other_boxes = self.get_other_pedestrian(sample)
+        #     if other_boxes is not None:
+        #         other_clip, _ = crop_video_bbox(
+        #             original_clip,
+        #             other_boxes,
+        #             height,
+        #             width,
+        #             max_height=max_height,
+        #             max_width=max_width,
+        #             scale=self.scale_crop,
+        #         )
+        #         new_clip = []
+        #         for i in range(len(ped_clip)):
+        #             if self.random_fail_track > random.uniform(0, 1):
+        #                 new_clip.append(other_clip[i])
+        #             else:
+        #                 new_clip.append(ped_clip[i])
+        #         ped_clip = torch.stack(new_clip)
 
         clip = self.video_transform(ped_clip)
 
