@@ -1,0 +1,89 @@
+version: "3.3"
+services:
+  intention:
+    image: "intention_ub18_ros:latest"
+    volumes:
+      - "../../intention_prediction:/code/intention_prediction"
+    environment:
+      - PYTHONPATH=/code/intention_prediction
+      - DETECTRON_ROOT=/code/intention_prediction
+      - ROS_DOMAIN_ID=10
+    command: python3 /code/intention_prediction/ros/ros_intention_classification.py --ros-args -p topic_in:=/image_front -p topic_in_detect:=perception/tracked_detections -p topic_intent:=perception/intention -p weights_file:=/code/intention_prediction/weights/x3d_classification_normal_step_6000.ckpt -p path_out:=/code/intention_prediction/ros/images -p gpu:=0
+    deploy:
+      resources:
+        reservations:
+          devices:
+          - driver: nvidia
+            device_ids: ['9']
+            capabilities: [gpu]
+
+
+  tracking:
+    image: "sort_ub18_ros:latest"
+    volumes:
+      - "../../Perception-pipeline/tracking/sort:/code/sort"
+    environment:
+      - PYTHONPATH=/code/sort
+      - ROS_DOMAIN_ID=10
+    command: python3 /code/sort/ros/ros_sort.py --ros-args -p topic_in:=perception/detections -p topic_out:=perception/tracked_detections
+    deploy:
+      resources:
+        reservations:
+          devices:
+          - driver: nvidia
+            device_ids: ['4']
+            capabilities: [gpu]
+
+  detection:
+    image: "detectron2_ub18_ros:latest"
+    volumes:
+      - "../../Perception-pipeline/detection-segmentation/detectron-perception:/code/detectron-perception"
+    environment:
+      - PYTHONPATH=/code/detectron-perception
+      - DETECTRON_ROOT=/code/detectron-perception
+      - ROS_DOMAIN_ID=10
+    command: python3 /code/detectron-perception/ros/ros_detector.py --ros-args -p topic_in:=/image_front -p topic_out:=perception/detections -p config_file:=/code/detectron-perception/configs/COCO-Detection/faster_rcnn_R_50_FPN_1x.yaml -p weights_file:=/code/detectron-perception/weights/COCO-Detections/resnet.pth -p gpu:=0
+    deploy:
+      resources:
+        reservations:
+          devices:
+          - driver: nvidia
+            device_ids: ['6']
+            capabilities: [gpu]
+
+
+  publisher:
+    image: "intention_ub18_ros:latest"
+    volumes:
+      - "../../Perception-pipeline/cv_tools/cv_tools:/code/cv_tools"
+      - "/datatmp/Datasets/TDA/ruta/:/data/videos"
+    environment:
+      - PYTHONPATH=/code/cv_tools
+      - DETECTRON_ROOT=/code/cv_tools
+      - ROS_DOMAIN_ID=10
+    command: python3 /code/cv_tools/ros/video_reader/ros_video_reader.py --ros-args -p video:=/data/videos/Carla/out_vehicle_sync_veryhigh_60fps.mp4 -p topic_out:=/image_front -p fps:=20 -p verbose:=false
+    deploy:
+      resources:
+        reservations:
+          devices:
+          - driver: nvidia
+            device_ids: ['6']
+            capabilities: [gpu]
+
+  # listener:
+  #   image: "intention_ub18_ros:latest"
+  #   volumes:
+  #     -  "../../intention_prediction:/code/intention_prediction"
+  #   environment:
+  #     - PYTHONPATH=/code/detectron-perception
+  #     - DETECTRON_ROOT=/code/detectron-perception
+  #     - ROS_DOMAIN_ID=10
+  #   command: python3 /code/intention_prediction/ros/ros_save_result.py --ros-args -p topic_image:=/image_front -p apply_color:=False -p max_value:=255
+  #   deploy:
+  #     resources:
+  #       reservations:
+  #         devices:
+  #         - driver: nvidia
+  #           device_ids: ['9']
+  #           capabilities: [gpu]
+

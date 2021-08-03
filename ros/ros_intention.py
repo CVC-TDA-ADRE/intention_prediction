@@ -136,6 +136,9 @@ class Detectron_Detector(Node):
         self.images = deque()
         self.count = 0
 
+        if self.path_out:
+            os.makedirs(self.path_out, exist_ok=True)
+
     def _msg2detections(self, msg):
         detections = []
         for obj_indx in range(len(msg.detections)):
@@ -183,7 +186,6 @@ class Detectron_Detector(Node):
 
             # Save Image
             if self.path_out != "" and all(intentions.shape):
-                os.makedirs(self.path_out, exist_ok=True)
                 filename_out = os.path.join(self.path_out, f"image_{self.count}.jpg")
                 self.count += 1
                 image_with_pred = self.draw_image(

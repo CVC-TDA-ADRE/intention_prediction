@@ -2,7 +2,7 @@
 # Note: This file has been barrowed from facebookresearch/slowfast repo.
 # TODO: Migrate this into the core PyTorchVideo libarary.
 
-from __future__ import annotations
+# from __future__ import annotations
 
 import itertools
 import logging
