@@ -1,0 +1,13 @@
+program: main.py
+method: bayes
+metric:
+  name: # whatever
+  goal: # whatever
+command:
+  - ${env}
+  - ${interpreter}
+  - ${program}
+  - # Choose config file
+  - ${args}
+parameters:
+  # sweep over the following parameters

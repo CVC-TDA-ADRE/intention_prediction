@@ -1,4 +1,4 @@
-# intention Prediction
+# Intention Prediction
 
 The objective is to predict the intention of the pedestrians in an image.
 
