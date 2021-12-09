@@ -86,18 +86,14 @@ class IntentionDataloader(pl.LightningDataModule):
                 if "mid_frame" in self.kwargs:
                     del self.kwargs["mid_frame"]
 
-                self.train_data = IntentionDatasetClass(
-                    self.train_path, train=True, **self.kwargs
-                )
+                self.train_data = IntentionDatasetClass(self.train_path, train=True, **self.kwargs)
 
                 if self.val_path is not None:
                     self.val_data = IntentionDatasetClass(self.val_path, **self.kwargs)
                 else:
                     self.val_data = None
             else:
-                raise ValueError(
-                    "Please enter a valid dataset type (classification, detection)"
-                )
+                raise ValueError("Please enter a valid dataset type (classification, detection)")
 
         # Assign test dataset for use in dataloader(s)
         if stage == "test" or stage is None:
@@ -123,9 +119,7 @@ class IntentionDataloader(pl.LightningDataModule):
     def train_dataloader(self):
 
         if self.weighted_sampler:
-            sampler = WeightedRandomSampler(
-                weights=self.generate_weights(), num_samples=self.train_data.__len__()
-            )
+            sampler = WeightedRandomSampler(weights=self.generate_weights(), num_samples=self.train_data.__len__())
             shuffle = False
         else:
             sampler = None
