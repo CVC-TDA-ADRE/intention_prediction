@@ -1,3 +1,10 @@
+WANDB:
+  project: IntentionPred
+  name: null
+  save_dir: ./outputs
+  debug: false
+  activate: true
+  
 DATA:
   train_path: /datatmp/Datasets/intention_prediction/PIE/processed_annotations/train.csv
   val_path: /datatmp/Datasets/intention_prediction/PIE/processed_annotations/val.csv
