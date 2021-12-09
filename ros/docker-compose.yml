@@ -18,7 +18,7 @@ services:
             capabilities: [gpu]
 
   detection:
-    image: "detectron2_ub18_ros:latest"
+    image: "detectron_ub18_ros:latest"
     volumes:
       - "../../Perception-pipeline/detection-segmentation/detectron-perception:/code/detectron-perception"
     environment:
@@ -36,7 +36,7 @@ services:
 
 
   publisher:
-    image: "intention_ub18_ros:latest"
+    image: "detectron_ub18_ros:latest"
     volumes:
       - "../../Perception-pipeline/cv_tools/cv_tools:/code/cv_tools"
       - "/datatmp/Datasets/TDA/ruta/:/data/videos"
