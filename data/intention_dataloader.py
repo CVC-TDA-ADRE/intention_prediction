@@ -6,38 +6,64 @@ import torch
 import numpy as np
 
 
+# def collate(batch):
+#     clips = []
+#     original_clips = []
+#     boxes = []
+#     original_boxes = []
+#     paths = []
+#     labels = []
+
+#     for item in batch:
+#         clips.append(item[0])
+#         original_clips.append(item[1])
+#         labels.extend(item[2]) if isinstance(item[2], list) else labels.append(item[2])
+#         paths.append(item[3])
+#         if len(item) > 4:
+#             boxes.append(item[4].float())
+#             original_boxes.append(item[5])
+#         else:
+#             boxes = None
+#             original_boxes = None
+
+#     try:
+#         output = {
+#             "clip": torch.stack(clips),
+#             "original_clip": original_clips,
+#             "boxes": boxes,
+#             "original_boxes": original_boxes,
+#             "label": torch.as_tensor(labels).unsqueeze(1),
+#             "video_paths": paths,
+#         }
+#     except RuntimeError as e:
+#         print(e)
+#         print(paths)
+#         raise RuntimeError
+
+#     return output
+
+
 def collate(batch):
     clips = []
-    original_clips = []
     boxes = []
-    original_boxes = []
-    paths = []
     labels = []
 
     for item in batch:
         clips.append(item[0])
-        original_clips.append(item[1])
-        labels.extend(item[2]) if isinstance(item[2], list) else labels.append(item[2])
-        paths.append(item[3])
-        if len(item) > 4:
-            boxes.append(item[4].float())
-            original_boxes.append(item[5])
+        labels.extend(item[1]) if isinstance(item[1], list) else labels.append(item[1])
+        if len(item) > 2:
+            boxes.append(item[2].float())
         else:
             boxes = None
-            original_boxes = None
 
     try:
         output = {
             "clip": torch.stack(clips),
-            "original_clip": original_clips,
             "boxes": boxes,
-            "original_boxes": original_boxes,
             "label": torch.as_tensor(labels).unsqueeze(1),
-            "video_paths": paths,
         }
     except RuntimeError as e:
         print(e)
-        print(paths)
         raise RuntimeError
 
     return output
@@ -53,6 +79,7 @@ class IntentionDataloader(pl.LightningDataModule):
         batch_size=4,
         num_workers=2,
         pin_memory=False,
+        persistent_workers=False,
         **kwargs
     ):
         super().__init__()
@@ -63,6 +90,7 @@ class IntentionDataloader(pl.LightningDataModule):
         self.pin_memory = pin_memory
         self.dataset_type = dataset_type
         self.weighted_sampler = weighted_sampler
+        self.persistent_workers = persistent_workers
         self.kwargs = kwargs
 
     def setup(self, stage=None):
@@ -133,6 +161,7 @@ class IntentionDataloader(pl.LightningDataModule):
             drop_last=True,
             sampler=sampler,
             collate_fn=collate,
+            persistent_workers=self.persistent_workers,
             pin_memory=self.pin_memory,
         )
 
@@ -146,6 +175,7 @@ class IntentionDataloader(pl.LightningDataModule):
             num_workers=self.num_workers,
             drop_last=True,
             collate_fn=collate,
+            persistent_workers=self.persistent_workers,
             pin_memory=self.pin_memory,
         )
 

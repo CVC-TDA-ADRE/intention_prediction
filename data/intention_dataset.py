@@ -53,9 +53,7 @@ class IntentionDataset(Dataset):
         # df = pd.read_csv(
         #     os.path.join(self.data_path, f"processed_annotations/{split_type}.csv")
         # )
-        parent_folder = os.path.abspath(
-            os.path.join(os.path.dirname(annotation_path), os.pardir)
-        )
+        parent_folder = os.path.abspath(os.path.join(os.path.dirname(annotation_path), os.pardir))
         self.cache_dir = os.path.join(parent_folder, "cache")
         os.makedirs(self.cache_dir, exist_ok=True)
         file_name = os.path.basename(annotation_path).split(".")[0]
@@ -83,11 +81,7 @@ class IntentionDataset(Dataset):
             df["bounding_box"] = df[["x1", "y1", "x2", "y2"]].apply(
                 lambda row: [row.x1, row.y1, row.x2, row.y2], axis=1
             )
-            bb = (
-                df.groupby(["frame", "video_path"])["bounding_box"]
-                .apply(list)
-                .reset_index(name="bounding_box")
-            )
+            bb = df.groupby(["frame", "video_path"])["bounding_box"].apply(list).reset_index(name="bounding_box")
             ids = (
                 df.groupby(["frame", "video_path"])["ID"]
                 .apply(list)
@@ -101,9 +95,7 @@ class IntentionDataset(Dataset):
                 .drop(columns=["frame", "video_path"])
             )
             data = bb.join(ids).join(cross)
-            input_seq = int(
-                (self.data_fps / self.desired_fps) * self.input_seq_size * self.sample_rate
-            )
+            input_seq = int((self.data_fps / self.desired_fps) * self.input_seq_size * self.sample_rate)
             stride = int(input_seq * (1 - self.overlap_percent)) + 1
             output_seq = int((self.data_fps / self.desired_fps) * self.frame_future)
 
@@ -126,9 +118,7 @@ class IntentionDataset(Dataset):
                         bbox = group.bounding_box.values[box_index]
                         if len(label) != len(bbox):
                             label = find_closest_match(
-                                group.crossing_true.values[
-                                    box_index - 1 : end_range - 1 + output_seq
-                                ],
+                                group.crossing_true.values[box_index - 1 : end_range - 1 + output_seq],
                                 len(bbox),
                             )
                         assert len(label) == len(bbox)
@@ -204,7 +194,8 @@ class IntentionDataset(Dataset):
             boxes = clip_boxes_to_image(boxes, new_h, new_w)
         boxes = torch.from_numpy(boxes)
 
-        output = [clip, original_clip, label, sample["video_path"], boxes, original_boxes]
+        # output = [clip, original_clip, label, sample["video_path"], boxes, original_boxes]
+        output = [clip, label, boxes]
 
         return output
 
@@ -212,9 +203,15 @@ class IntentionDataset(Dataset):
 if __name__ == "__main__":
     dataset = IntentionDataset(
         "/datatmp/Datasets/intention_prediction/PIE/processed_annotations/train.csv",
-        20,
-        10,
+        desired_fps=15,
+        input_seq_size=15,
+        sample_rate=1,
+        resize=(182, 182),
     )
     print(dataset.__len__())
     print(dataset.__getitem__(0))
-    print(dataset.count_labels())
+    for i, elem in enumerate(dataset.__getitem__(0)):
+        try:
+            print(i, elem.shape)
+        except:  # noqa
+            pass

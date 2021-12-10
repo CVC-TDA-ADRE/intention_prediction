@@ -17,7 +17,7 @@ from models.slow_r50 import SlowR50
 
 
 class IntentionPredictor(pl.LightningModule):
-    def __init__(self, data_kwargs, training_kwargs, data_len=0, **model_kwargs) -> None:
+    def __init__(self, data_kwargs, training_kwargs, **model_kwargs) -> None:
         super(IntentionPredictor, self).__init__()
 
         self.save_hyperparameters()
@@ -28,7 +28,7 @@ class IntentionPredictor(pl.LightningModule):
         self.fps = data_kwargs["data_fps"]
         self.lr = self.training_kwargs["lr"]
         self.model_type = data_kwargs["dataset_type"]
-        self.data_len = data_len
+        # self.data_len = data_len
         self.checkpoints = deque()
 
         # Metrics
@@ -55,14 +55,14 @@ class IntentionPredictor(pl.LightningModule):
                 model_type=data_kwargs["dataset_type"],
                 **model_kwargs,
             )
-        print(self.model)
+        # print(self.model)
 
         # if self.logger is not None:
         #     self.logger.experiment.watch(self.model, log="all")
         class_names = {0: "not_crossing", 1: "crossing"}
-        self.visualization = VideoVisualizer(
-            num_classes=1, class_names=class_names, thres=0.5, mode="binary"
-        )
+        self.visualization = VideoVisualizer(num_classes=1, class_names=class_names, thres=0.5, mode="binary")
+
+        print("Trainer initialized")
 
     def forward(self, x, boxes=None) -> Tensor:
         return self.model(x, boxes)
@@ -87,25 +87,21 @@ class IntentionPredictor(pl.LightningModule):
             raise ValueError("Please enter a valid optimizer (adam, admw)")
 
         if self.training_kwargs["scheduler"] == "cosine":
-            scheduler = optim.lr_scheduler.CosineAnnealingLR(
-                optimizer, self.training_kwargs["epochs"], last_epoch=-1
-            )
-        elif self.training_kwargs["scheduler"] == "1cycle":
-            scheduler = optim.lr_scheduler.OneCycleLR(
-                optimizer,
-                self.lr,
-                epochs=self.training_kwargs["epochs"],
-                steps_per_epoch=self.data_len,
-            )
+            scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, self.training_kwargs["epochs"], last_epoch=-1)
+        # elif self.training_kwargs["scheduler"] == "1cycle":
+        #     scheduler = optim.lr_scheduler.OneCycleLR(
+        #         optimizer,
+        #         self.lr,
+        #         epochs=self.training_kwargs["epochs"],
+        #         steps_per_epoch=self.data_len,
+        #     )
         else:
             raise ValueError("Please enter a valid scheduler (cosine, 1cycle)")
 
         return [optimizer], [scheduler]
 
     @torch.no_grad()
-    def save_video(
-        self, sample_clip, sig_preds, labels, sample_boxes=None, mode="train", name="video"
-    ):
+    def save_video(self, sample_clip, sig_preds, labels, sample_boxes=None, mode="train", name="video"):
 
         max_frames = 30
         sample_clip = sample_clip[-max_frames:]
@@ -113,9 +109,7 @@ class IntentionPredictor(pl.LightningModule):
         if self.model_type == "detection":
             sample_boxes = sample_boxes[0]
             sample_preds = sig_preds[: len(sample_boxes)].cpu()
-            preview_video = self.visualization.draw_clip_range(
-                sample_clip, sample_preds, sample_boxes
-            )
+            preview_video = self.visualization.draw_clip_range(sample_clip, sample_preds, sample_boxes)
             self.logger.experiment.log(
                 {
                     f"{mode}/{name}": wandb.Video(
@@ -146,15 +140,13 @@ class IntentionPredictor(pl.LightningModule):
         sig_preds = torch.sigmoid(preds.detach())
 
         # Log video
-        if self.logger is not None and (
-            batch_idx % self.training_kwargs["video_every"] == 0
-        ):
-            sample_clip = batch["original_clip"][0].cpu() / 255.0
-            self.save_video(sample_clip, sig_preds, labels, batch["original_boxes"])
-            # sample_clip = clip[0].cpu().permute(1, 2, 3, 0) * torch.as_tensor(
-            #     self.data_kwargs["image_std"]
-            # ) + torch.as_tensor(self.data_kwargs["image_mean"])
-            # self.save_video(sample_clip, sig_preds, labels, boxes)
+        # if self.logger is not None and (batch_idx % self.training_kwargs["video_every"] == 0):
+        #     sample_clip = batch["original_clip"][0].cpu() / 255.0
+        #     self.save_video(sample_clip, sig_preds, labels, batch["original_boxes"])
+        # sample_clip = clip[0].cpu().permute(1, 2, 3, 0) * torch.as_tensor(
+        #     self.data_kwargs["image_std"]
+        # ) + torch.as_tensor(self.data_kwargs["image_mean"])
+        # self.save_video(sample_clip, sig_preds, labels, boxes)
 
         # Metrics
         if all(labels == 0):  # This case is ill-defined
@@ -180,21 +172,17 @@ class IntentionPredictor(pl.LightningModule):
     def validation_step(self, batch, batch_idx) -> Dict:
         clip, boxes, labels = batch["clip"], batch["boxes"], batch["label"]
         preds = self(clip, boxes)
-        loss = nn.functional.binary_cross_entropy_with_logits(preds, labels.float())
+        loss = self.bce_loss(preds, labels.float())
         sig_preds = torch.sigmoid(preds)
 
         # Log video
-        if self.logger is not None and (
-            batch_idx % (self.training_kwargs["video_every"] // 10) == 0
-        ):
-            sample_clip = batch["original_clip"][0].cpu()
-            self.save_video(
-                sample_clip, sig_preds, labels, batch["original_boxes"], mode="val"
-            )
-            # sample_clip = clip[0].cpu().permute(1, 2, 3, 0) * torch.as_tensor(
-            #     self.data_kwargs["image_std"]
-            # ) + torch.as_tensor(self.data_kwargs["image_mean"])
-            # self.save_video(sample_clip, sig_preds, labels, boxes)
+        # if self.logger is not None and (batch_idx % (self.training_kwargs["video_every"] // 10) == 0):
+        #     sample_clip = batch["original_clip"][0].cpu()
+        #     self.save_video(sample_clip, sig_preds, labels, batch["original_boxes"], mode="val")
+        # sample_clip = clip[0].cpu().permute(1, 2, 3, 0) * torch.as_tensor(
+        #     self.data_kwargs["image_std"]
+        # ) + torch.as_tensor(self.data_kwargs["image_mean"])
+        # self.save_video(sample_clip, sig_preds, labels, boxes)
 
         # Metrics
         if all(labels == 0):  # This case is ill-defined

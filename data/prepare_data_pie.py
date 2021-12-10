@@ -43,7 +43,7 @@ if not os.path.isdir(os.path.join(pie_folder, out_folder)):
 # if not os.path.isdir(os.path.join(pie_folder, out_folder, "test")):
 #     os.mkdir(os.path.join(pie_folder, out_folder, "test"))
 
-pie = pie_data.PIE(data_path=pie_folder)
+pie = pie_data.PIE(data_path=pie_folder, regen_database=True)
 dataset = pie.generate_database()
 
 sets = sorted(list(dataset.keys()))

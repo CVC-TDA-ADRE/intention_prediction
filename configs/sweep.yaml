@@ -1,8 +1,8 @@
 program: main.py
 method: bayes
 metric:
-  name: # whatever
-  goal: # whatever
+  name: val/f1_epoch
+  goal: maximize
 command:
   - ${env}
   - ${interpreter}
@@ -11,3 +11,28 @@ command:
   - ${args}
 parameters:
   # sweep over the following parameters
+  input_seq_size:
+    distribution: int_uniform
+    min: 2
+    max: 10
+  lr:
+    distribution: uniform
+    min: 0.00001
+    max: 0.05
+  max_steps:
+    distribution: int_uniform
+    min: 5000
+    max: 50000
+  frame_future:
+    distribution: int_uniform
+    min: 10
+    max: 40
+  sample_rate:
+    distribution: int_uniform
+    min: 1
+    max: 6
+  weighted_sampler:
+    distribution: categorical
+    values:
+      - True
+      - False

@@ -1,7 +1,7 @@
 WANDB:
   project: IntentionPred
   name: null
-  save_dir: ./outputs
+  save_dir: /datatmp/Experiments/abigata/intentions
   debug: false
   activate: true
   
@@ -11,23 +11,25 @@ DATA:
   # val_path: null
   dataset_type: detection
   weighted_sampler: True
-  batch_size: 4
-  num_workers: 4
+  batch_size: 8
+  num_workers: -1
   pin_memory: True
-  desired_fps: 16
-  input_seq_size: 16
-  frame_future: 16
-  sample_rate: 1
-  resize: 224
-  overlap_percent: 0.8
+  desired_fps: 20
+  input_seq_size: 4
+  frame_future: 20
+  sample_rate: 12
+  resize: 182
+  overlap_percent: 0.6
+  persistent_workers: True
   data_fps: 30
-  mid_frame: True
+  mid_frame: False
   image_mean: [0.45, 0.45, 0.45]
   image_std: [0.225, 0.225, 0.225]
 
 TRAINING:
   gpus: -1
-  epochs: 5
+  epochs: 100000
+  max_steps: 40001
   optimizer: adamw
   scheduler: cosine
   stochastic_weight_avg: True
@@ -36,12 +38,14 @@ TRAINING:
   betas: [0.9, 0.999]
   frac_train: 1.
   frac_val: 1.
-  video_every: 100
+  video_every: 200
   model_to_use: x3d
-  log_every: 5
-  save_checkpoints_every: 2000
+  log_every: 10
+  save_checkpoints_every: 5000
+  save_last_k: 2
+  profiler: null
 
 MODEL:
   model_num_class: 1
-  model_pretraining: x3d_m
+  model_pretraining: x3d_xs
 

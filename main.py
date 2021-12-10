@@ -41,9 +41,6 @@ def train(config):
     if isinstance(data_config["resize"], int):
         data_config["resize"] = (data_config["resize"], data_config["resize"])
 
-    data = IntentionDataloader(**data_config)
-    data.setup("fit")
-
     n_gpus = training_config["gpus"]
 
     if data_config["num_workers"] < 0:
@@ -52,12 +49,20 @@ def train(config):
         else:
             data_config["num_workers"] = 6 * n_gpus
 
-    predictor = IntentionPredictor(data_config, training_config, data_len=len(data.train_dataloader()), **model_config)
+    print(config)
+
+    data = IntentionDataloader(**data_config)
+
+    predictor = IntentionPredictor(data_config, training_config, **model_config)
 
     callbacks = [SaveModelDescription()]
     if wandb_conf["activate"]:
         if training_config["save_checkpoints_every"] is not None:
-            callbacks.append(CircularModelCheckpoint(period=training_config["save_checkpoints_every"], save_last_k=3))
+            callbacks.append(
+                CircularModelCheckpoint(
+                    period=training_config["save_checkpoints_every"], save_last_k=training_config["save_last_k"] - 1
+                )
+            )
     else:
         logger = False
 
@@ -69,11 +74,13 @@ def train(config):
         logger=logger,
         fast_dev_run=wandb_conf["debug"],
         max_epochs=training_config["epochs"],
+        max_steps=training_config["max_steps"],
         log_every_n_steps=training_config["log_every"],
         limit_train_batches=training_config["frac_train"],
         limit_val_batches=training_config["frac_val"],
         checkpoint_callback=False,
         callbacks=callbacks,
+        profiler=training_config["profiler"],
         # auto_lr_find=args.auto_lr_find,
     )
     if wandb_conf["activate"]:
