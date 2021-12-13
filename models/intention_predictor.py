@@ -55,10 +55,7 @@ class IntentionPredictor(pl.LightningModule):
                 model_type=data_kwargs["dataset_type"],
                 **model_kwargs,
             )
-        # print(self.model)
 
-        # if self.logger is not None:
-        #     self.logger.experiment.watch(self.model, log="all")
         class_names = {0: "not_crossing", 1: "crossing"}
         self.visualization = VideoVisualizer(num_classes=1, class_names=class_names, thres=0.5, mode="binary")
 
@@ -204,11 +201,11 @@ class IntentionPredictor(pl.LightningModule):
             precision = self.train_precision(sig_preds, labels)
             f1 = self.train_F1(sig_preds, labels)
 
-        self.log("val/acc", acc, on_step=True, on_epoch=True)
-        self.log("val/loss", loss, on_step=True, on_epoch=True)
-        self.log("val/recall", recall, on_step=True, on_epoch=True)
-        self.log("val/precision", precision, on_step=True, on_epoch=True)
-        self.log("val/f1", f1, on_step=True, on_epoch=True)
+        self.log("val/acc", acc, on_epoch=True)
+        self.log("val/loss", loss, on_epoch=True)
+        self.log("val/recall", recall, on_epoch=True)
+        self.log("val/precision", precision, on_epoch=True)
+        self.log("val/f1", f1, on_epoch=True)
 
         return loss
 
