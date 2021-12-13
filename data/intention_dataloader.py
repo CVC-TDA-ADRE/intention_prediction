@@ -47,14 +47,22 @@ def collate(batch):
     clips = []
     boxes = []
     labels = []
+    original_clips = []
+    original_boxes = []
 
     for item in batch:
         clips.append(item[0])
         labels.extend(item[1]) if isinstance(item[1], list) else labels.append(item[1])
         if len(item) > 2:
-            boxes.append(item[2].float())
-        else:
-            boxes = None
+            if len(item) == 3:
+                original_clips.append(item[2])
+                boxes = None
+            else:
+                boxes.append(item[2].float())
+        if len(item) > 3:
+            original_clips.append(item[3])
+        if len(item) > 4:
+            original_boxes.append(item[4])
 
     try:
         output = {
@@ -65,6 +73,12 @@ def collate(batch):
     except RuntimeError as e:
         print(e)
         raise RuntimeError
+
+    if len(original_clips) > 0:
+        output["original_clip"] = original_clips
+
+    if len(original_boxes) > 0:
+        output["original_boxes"] = original_boxes
 
     return output
 

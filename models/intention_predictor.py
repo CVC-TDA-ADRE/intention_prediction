@@ -140,9 +140,13 @@ class IntentionPredictor(pl.LightningModule):
         sig_preds = torch.sigmoid(preds.detach())
 
         # Log video
-        # if self.logger is not None and (batch_idx % self.training_kwargs["video_every"] == 0):
-        #     sample_clip = batch["original_clip"][0].cpu() / 255.0
-        #     self.save_video(sample_clip, sig_preds, labels, batch["original_boxes"])
+        if (
+            self.logger is not None
+            and self.data_kwargs["send_original_vid"]
+            and (batch_idx % self.training_kwargs["video_every"] == 0)
+        ):
+            sample_clip = batch["original_clip"][0].cpu() / 255.0
+            self.save_video(sample_clip, sig_preds, labels, batch["original_boxes"])
         # sample_clip = clip[0].cpu().permute(1, 2, 3, 0) * torch.as_tensor(
         #     self.data_kwargs["image_std"]
         # ) + torch.as_tensor(self.data_kwargs["image_mean"])
@@ -176,9 +180,13 @@ class IntentionPredictor(pl.LightningModule):
         sig_preds = torch.sigmoid(preds)
 
         # Log video
-        # if self.logger is not None and (batch_idx % (self.training_kwargs["video_every"] // 10) == 0):
-        #     sample_clip = batch["original_clip"][0].cpu()
-        #     self.save_video(sample_clip, sig_preds, labels, batch["original_boxes"], mode="val")
+        if (
+            self.logger is not None
+            and self.data_kwargs["send_original_vid"]
+            and (batch_idx % (self.training_kwargs["video_every"] // 10) == 0)
+        ):
+            sample_clip = batch["original_clip"][0].cpu()
+            self.save_video(sample_clip, sig_preds, labels, batch["original_boxes"], mode="val")
         # sample_clip = clip[0].cpu().permute(1, 2, 3, 0) * torch.as_tensor(
         #     self.data_kwargs["image_std"]
         # ) + torch.as_tensor(self.data_kwargs["image_mean"])

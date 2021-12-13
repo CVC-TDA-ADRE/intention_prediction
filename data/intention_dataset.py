@@ -39,6 +39,7 @@ class IntentionDataset(Dataset):
         data_fps=30,
         image_mean=[0.45, 0.45, 0.45],
         image_std=[0.225, 0.225, 0.225],
+        send_original_vid=False,
     ):
         # self.data_path = data_path
         self.input_seq_size = input_seq_size
@@ -49,6 +50,7 @@ class IntentionDataset(Dataset):
         self.resize = resize
         self.frame_future = frame_future
         self.mid_frame = mid_frame
+        self.send_original_vid = send_original_vid
 
         # df = pd.read_csv(
         #     os.path.join(self.data_path, f"processed_annotations/{split_type}.csv")
@@ -194,6 +196,8 @@ class IntentionDataset(Dataset):
             boxes = clip_boxes_to_image(boxes, new_h, new_w)
         boxes = torch.from_numpy(boxes)
 
+        if self.send_original_vid:
+            return [clip, label, boxes, original_clip, original_boxes]
         # output = [clip, original_clip, label, sample["video_path"], boxes, original_boxes]
         output = [clip, label, boxes]
 

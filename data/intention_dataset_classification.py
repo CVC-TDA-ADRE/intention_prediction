@@ -39,6 +39,7 @@ class IntentionDatasetClass(Dataset):
         image_mean=[0.45, 0.45, 0.45],
         image_std=[0.225, 0.225, 0.225],
         train=False,
+        send_original_vid=False,
     ):
         # self.data_path = data_path
         self.input_seq_size = input_seq_size
@@ -51,17 +52,18 @@ class IntentionDatasetClass(Dataset):
         self.frame_future = frame_future
         self.random_fail_detect = random_fail_detect
         self.random_fail_track = random_fail_track
+        self.send_original_vid = send_original_vid
 
         # df = pd.read_csv(
         #     os.path.join(self.data_path, f"processed_annotations/{split_type}.csv")
         # )
-        parent_folder = os.path.abspath(
-            os.path.join(os.path.dirname(annotation_path), os.pardir)
-        )
+        parent_folder = os.path.abspath(os.path.join(os.path.dirname(annotation_path), os.pardir))
         self.cache_dir = os.path.join(parent_folder, "cache")
         os.makedirs(self.cache_dir, exist_ok=True)
         file_name = os.path.basename(annotation_path).split(".")[0]
-        self.dataset_name = f"class_{file_name}_{input_seq_size}_{int(overlap_percent*100)}_{data_fps}_{desired_fps}_{sample_rate}.pkl"
+        self.dataset_name = (
+            f"class_{file_name}_{input_seq_size}_{int(overlap_percent*100)}_{data_fps}_{desired_fps}_{sample_rate}.pkl"
+        )
 
         self.df = pd.read_csv(annotation_path)
         self.dataset = self.process_df(self.df)
@@ -124,9 +126,7 @@ class IntentionDatasetClass(Dataset):
                 lambda row: [row.x1, row.y1, row.x2, row.y2], axis=1
             )
 
-            input_seq = int(
-                (self.data_fps / self.desired_fps) * self.input_seq_size * self.sample_rate
-            )
+            input_seq = int((self.data_fps / self.desired_fps) * self.input_seq_size * self.sample_rate)
             stride = int(input_seq * (1 - self.overlap_percent)) + 1
             output_seq = int((self.data_fps / self.desired_fps) * self.frame_future)
 
@@ -175,9 +175,7 @@ class IntentionDatasetClass(Dataset):
         ]
         ids = all_ped_df.ID.unique()
         if len(ids) > 1:
-            other_id = random.choices(
-                ids, weights=[1 if i != sample["ids"] else 0 for i in ids]
-            )[0]
+            other_id = random.choices(ids, weights=[1 if i != sample["ids"] else 0 for i in ids])[0]
         else:
             return None
 
@@ -203,7 +201,7 @@ class IntentionDatasetClass(Dataset):
         if self.random_fail_track > 0:
             other_boxes = self.get_other_pedestrian(sample)
 
-        ped_clip, (max_height, max_width) = crop_video_bbox(
+        ped_clip, (_, _) = crop_video_bbox(
             original_clip,
             original_boxes,
             height,
@@ -214,29 +212,12 @@ class IntentionDatasetClass(Dataset):
             random_fail_track=self.random_fail_track,
         )
 
-        # if self.random_fail_track > 0:
-        #     other_boxes = self.get_other_pedestrian(sample)
-        #     if other_boxes is not None:
-        #         other_clip, _ = crop_video_bbox(
-        #             original_clip,
-        #             other_boxes,
-        #             height,
-        #             width,
-        #             max_height=max_height,
-        #             max_width=max_width,
-        #             scale=self.scale_crop,
-        #         )
-        #         new_clip = []
-        #         for i in range(len(ped_clip)):
-        #             if self.random_fail_track > random.uniform(0, 1):
-        #                 new_clip.append(other_clip[i])
-        #             else:
-        #                 new_clip.append(ped_clip[i])
-        #         ped_clip = torch.stack(new_clip)
-
         clip = self.video_transform(ped_clip)
 
-        output = [clip, ped_clip, label, sample["video_path"]]
+        if self.send_original_vid:
+            return [clip, label, ped_clip]
+
+        output = [clip, label]
 
         return output
 
