@@ -54,7 +54,7 @@ def collate(batch):
         clips.append(item[0])
         labels.extend(item[1]) if isinstance(item[1], list) else labels.append(item[1])
         if len(item) > 2:
-            if len(item) == 3:
+            if len(item[2].shape) == 4:
                 original_clips.append(item[2])
                 boxes = None
             else:
